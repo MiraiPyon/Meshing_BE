@@ -1,6 +1,5 @@
 from app.engines.base import MeshEngine
-from app.engines.delaunay_engine import DelaunayEngine
-from app.engines.quad_engine import QuadEngine
-from app.engines.factory import MeshEngineFactory
+from app.engines.delaunay_engine import DelaunayMeshEngine
+from app.engines.quad_engine import QuadMeshEngine, QuadMeshEngineFlexible
 
-__all__ = ["MeshEngine", "DelaunayEngine", "QuadEngine", "MeshEngineFactory"]
+__all__ = ["MeshEngine", "DelaunayMeshEngine", "QuadMeshEngine", "QuadMeshEngineFlexible"]
