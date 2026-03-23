@@ -1,15 +1,26 @@
-from dataclasses import dataclass
-import os
+import secrets
+from pydantic_settings import BaseSettings
 
 
-@dataclass(frozen=True)
-class Settings:
-    app_name: str = os.getenv("APP_NAME", "Meshing Backend")
-    db_host: str = os.getenv("DB_HOST", "localhost")
-    db_port: int = int(os.getenv("DB_PORT", "5432"))
-    db_name: str = os.getenv("DB_NAME", "meshing_db")
-    db_user: str = os.getenv("DB_USER", "admin")
-    db_pass: str = os.getenv("DB_PASS", "meshing_pass_2026")
+class Settings(BaseSettings):
+    # App
+    APP_NAME: str = "FEA 2D Meshing API"
+    DEBUG: bool = True
+
+    # Database
+    POSTGRES_URL: str = ""
+
+    # JWT
+    JWT_SECRET: str = secrets.token_urlsafe(64)
+
+    # Google OAuth2
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
+
+    class Config:
+        env_file = ".env"
+        extra = "allow"
 
 
 settings = Settings()
