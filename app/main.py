@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.api.endpoints import router
+from app.api.endpoints_fea import router as fea_router
 from app.core.config import settings
 from app.database.session import init_db
 
@@ -34,6 +35,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(router)
+app.include_router(fea_router)
 
 
 @app.get("/")
