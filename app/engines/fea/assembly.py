@@ -272,9 +272,9 @@ class GlobalAssembler:
         """
         Elimination method – giảm kích thước hệ.
 
-        Trả về K_reduced (n_free, n_free) và F_reduced.
+        Trả về K_reduced (n_free, n_free) sparse và F_reduced.
         """
-        K_dense = K.toarray()
+        K_coo = K.tocoo()
         F_mod = F.copy()
 
         # Xác định all fixed DOFs
@@ -283,9 +283,22 @@ class GlobalAssembler:
             fixed_dofs.add(self._dof_index(bc.node_id, bc.dof))
 
         free_dofs = [d for d in range(self.n_dof) if d not in fixed_dofs]
+        fixed_list = sorted(fixed_dofs)
+        free_set = set(free_dofs)
 
-        # Xóa fixed rows/cols
-        K_reduced = np.delete(np.delete(K_dense, list(fixed_dofs), axis=0), list(fixed_dofs), axis=1)
+        # Filter COO data: keep only rows/cols in free_dofs
+        mask = [r in free_set and c in free_set for r, c in zip(K_coo.row, K_coo.col)]
+        rows = K_coo.row[mask]
+        cols = K_coo.col[mask]
+        data = K_coo.data[mask]
+
+        # Remap indices to reduced space
+        index_map = {old: new for new, old in enumerate(free_dofs)}
+        rows = np.array([index_map[r] for r in rows])
+        cols = np.array([index_map[c] for c in cols])
+
+        n_free = len(free_dofs)
+        K_reduced = sp.csr_matrix((data, (rows, cols)), shape=(n_free, n_free))
 
         # Điều chỉnh F: F_i -= Σ K_ij * u_j (với j là fixed)
         for bc in bc_list:
@@ -301,23 +314,35 @@ class GlobalAssembler:
         K_full: sp.csr_matrix,
         u_full: np.ndarray,
         bc_list: List[BoundaryCondition],
+        F_external: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """
         Khôi phục phản lực liên kết tại các DOF bị ràng buộc.
 
-        R_i = K_ij * u_j  (với j free)
+        R = K_full @ u_full - F_external
+
+        Nếu F_external=None, trả về K*u (internal forces chưa trừ external).
+
+        Args:
+            K_full:      ma trận độ cứng đầy đủ (sparse)
+            u_full:      vector chuyển vị đầy đủ (n_dof,)
+            bc_list:     list of BoundaryCondition
+            F_external:  vector lực ngoài đầy đủ (n_dof,) — KHÔNG phải F_reduced
 
         Returns:
             reactions: (n_dof,) – chỉ các DOF trong bc_list có giá trị
         """
         reactions = np.zeros(self.n_dof)
 
-        # Sparse matrix-vector product: R = K_full @ u_full
-        r_full = K_full @ u_full
+        # R = K @ u
+        r_internal = K_full @ u_full
+
+        if F_external is not None:
+            r_internal = r_internal - F_external
 
         for bc in bc_list:
             dof_idx = self._dof_index(bc.node_id, bc.dof)
-            reactions[dof_idx] = float(r_full[dof_idx])
+            reactions[dof_idx] = float(r_internal[dof_idx])
 
         return reactions
 

@@ -94,6 +94,8 @@ class FEASolver:
             nodal_forces:  Concentrated nodal forces
             line_loads:    Distributed edge loads
         """
+        self._bc_values = bc_list  # store for _expand_u
+
         if self._K_full is None:
             self.setup()
 
@@ -136,8 +138,12 @@ class FEASolver:
             return self._empty_u(), False, "Call apply_boundary_conditions() first"
 
         try:
-            # Factorize để tái sử dụng cho parametric runs
-            solve_func = factorized(self._K_reduced)
+            # Convert sparse K to CSC upfront to avoid SparseEfficiencyWarning in splu
+            if sp.issparse(self._K_reduced):
+                K_work = self._K_reduced.tocsc()
+            else:
+                K_work = self._K_reduced
+            solve_func = factorized(K_work)
             u_reduced = solve_func(self._F_reduced)
 
             # Expand to full DOF vector
