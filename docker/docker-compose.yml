@@ -1,0 +1,55 @@
+# Docker Compose configuration for 2D Meshing Project
+# Run with: docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:18.3
+    container_name: meshing-db
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASS:-meshing_pass_2026}
+      POSTGRES_DB: ${DB_NAME:-meshing_db}
+      PGPORT: ${DB_PORT:-5432}
+    ports:
+      - "${DB_PORT:-5432}:${DB_PORT:-5432}"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      # Nếu có file sql khởi tạo thì mở comment dòng dưới
+      # - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - meshing-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-meshing_db} -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PGAdmin để soi Database (Chỉ chạy khi gọi profile tools)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: meshing-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@meshing.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    networks:
+      - meshing-network
+    depends_on:
+      - db
+    profiles:
+      - tools
+
+networks:
+  meshing-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+
+# Note: keep secrets in docker/.env locally and commit only docker/.env.example
