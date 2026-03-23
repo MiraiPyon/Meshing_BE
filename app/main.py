@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
 from app.api.endpoints import router
-from app.api.endpoints_fea import router as fea_router
 from app.core.config import settings
 from app.database.session import init_db
 
@@ -10,13 +10,10 @@ from app.database.session import init_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """App lifespan - startup and shutdown"""
-    # Startup
     init_db()
     yield
-    # Shutdown
 
 
-# Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     debug=settings.DEBUG,
@@ -24,7 +21,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,14 +29,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(router)
-app.include_router(fea_router)
+app.include_router(router, prefix="/api")
 
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
     return {
         "app": settings.APP_NAME,
         "version": "1.0.0",
