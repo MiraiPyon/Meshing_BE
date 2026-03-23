@@ -1,0 +1,215 @@
+"""
+FEAService – Business logic cho FEA analysis.
+"""
+
+import json
+import uuid
+from typing import List, Optional, Tuple
+from uuid import UUID
+from sqlalchemy.orm import Session
+import numpy as np
+
+from app.schemas.fea_request import (
+    FEASolveRequest,
+    MaterialInput,
+    BoundaryConditionInput,
+    NodalForceInput,
+    LineLoadInput,
+)
+from app.schemas.fea_response import FEAResultResponse
+from app.database.models import Mesh as MeshModel, Geometry as GeometryModel
+from app.engines.fea.material import MaterialModel, AnalysisType
+from app.engines.fea.assembly import (
+    GlobalAssembler,
+    BoundaryCondition,
+    NodalForce,
+    LineLoad,
+)
+from app.engines.fea.solver import FEASolver, SolverConfig
+from app.engines.fea.stress_recovery import StressRecovery
+from app.engines.fea.material import MaterialModel, AnalysisType
+
+
+class FEAService:
+    """Service xử lý FEA analysis."""
+
+    def solve(self, db: Session, req: FEASolveRequest) -> Tuple[FEAResultResponse, bool, str]:
+        """
+        Run full FEA analysis.
+
+        Args:
+            db:  SQLAlchemy session
+            req: FEASolveRequest
+
+        Returns:
+            (result, success, message)
+        """
+        # 1. Load mesh
+        mesh = db.query(MeshModel).filter(MeshModel.id == req.mesh_id).first()
+        if not mesh:
+            raise ValueError(f"Mesh {req.mesh_id} not found")
+
+        nodes_raw = json.loads(mesh.nodes)
+        elements_raw = json.loads(mesh.elements)
+        nodes = np.array(nodes_raw)
+        # elements: list of lists, convert to 1-based for FEA
+        elements = [[e + 1 for e in elem] for elem in elements_raw]
+
+        # 2. Material
+        if req.material.preset:
+            preset_map = {
+                "steel": MaterialModel.steel,
+                "aluminum": MaterialModel.aluminum,
+                "titanium": MaterialModel.titanium,
+                "concrete": MaterialModel.concrete,
+            }
+            mat_fn = preset_map.get(req.material.preset)
+            if not mat_fn:
+                raise ValueError(f"Unknown preset: {req.material.preset}")
+            material = mat_fn(thickness=req.material.thickness)
+        else:
+            material = MaterialModel(
+                E=req.material.E,
+                nu=req.material.nu,
+                thickness=req.material.thickness,
+            )
+
+        # Override thickness if explicitly provided
+        material.thickness = req.material.thickness
+
+        # 3. Analysis type
+        if req.analysis_type == "plane_strain":
+            analysis_type = AnalysisType.PLANE_STRAIN
+        else:
+            analysis_type = AnalysisType.PLANE_STRESS
+
+        # 4. Config
+        config = SolverConfig()
+        if req.integration_order:
+            config.integration_order = req.integration_order
+
+        # 5. Solver
+        solver = FEASolver(
+            nodes=nodes,
+            elements=elements,
+            material=material,
+            analysis_type=analysis_type,
+            config=config,
+        )
+
+        # 6. Boundary conditions
+        bc_list = [
+            BoundaryCondition(node_id=bc.node_id, dof=bc.dof, value=bc.value)
+            for bc in req.boundary_conditions
+        ]
+
+        nodal_forces = [
+            NodalForce(node_id=f.node_id, dof=f.dof, value=f.value)
+            for f in req.nodal_forces
+        ]
+
+        line_loads = None
+        if req.line_loads:
+            line_loads = [
+                LineLoad(
+                    start_node=ll.start_node,
+                    end_node=ll.end_node,
+                    dof=ll.dof,
+                    value=ll.value,
+                )
+                for ll in req.line_loads
+            ]
+
+        # 7. Solve
+        u_full, success, message = solver.run(
+            bc_list=bc_list,
+            nodal_forces=nodal_forces,
+            line_loads=line_loads,
+        )
+
+        if not success:
+            return None, False, message
+
+        # 8. Stress recovery
+        stress_rec = StressRecovery(material, analysis_type)
+
+        all_stresses = []
+        all_strains = []
+        gp_stresses_list = []
+        gp_coords_list = []
+
+        for e_idx in range(len(elements)):
+            coords = solver.assembler.get_element_coords(e_idx)
+            elem = elements[e_idx]
+            u_elem = np.zeros(2 * len(elem))
+            for i, n in enumerate(elem):
+                u_elem[2 * i]     = u_full[n - 1, 0]
+                u_elem[2 * i + 1] = u_full[n - 1, 1]
+
+            stresses_gp, strains_gp, gp_coords = stress_rec.compute_element_stress(
+                coords, u_elem, order=config.integration_order
+            )
+
+            # Average stress/strain over Gauss points
+            all_stresses.append(stresses_gp.mean(axis=0).tolist())
+            all_strains.append(strains_gp.mean(axis=0).tolist())
+            gp_stresses_list.append(stresses_gp)
+            gp_coords_list.append(gp_coords)
+
+        # Von Mises per element
+        von_mises_elem = [MaterialModel.von_mises_stress(np.array(s)) for s in all_stresses]
+
+        # Nodal stress averaging
+        nodal_stresses, nodal_strains = stress_rec.average_to_nodes(
+            nodes=nodes,
+            elements=[[e - 1 for e in elem] for elem in elements],
+            displacements=u_full,
+            gp_stresses=gp_stresses_list,
+            gp_gp_coords=gp_coords_list,
+        )
+
+        nodal_von_mises = [
+            float(MaterialModel.von_mises_stress(nodal_stresses[n]))
+            for n in range(len(nodes))
+        ]
+
+        # Stats
+        displacements_flat = u_full.tolist()
+
+        max_disp = float(np.max(np.sqrt(u_full[:, 0] ** 2 + u_full[:, 1] ** 2)))
+        max_vm = float(max(von_mises_elem))
+        max_sxx = float(max(s[0] for s in all_stresses))
+        max_syy = float(max(s[1] for s in all_stresses))
+        max_txy = float(max(s[2] for s in all_stresses))
+
+        # Build response
+        result = FEAResultResponse(
+            id=uuid.uuid4(),
+            mesh_id=req.mesh_id,
+            name=mesh.name + "_fea",
+            analysis_type=req.analysis_type,
+            material={
+                "E": material.E,
+                "nu": material.nu,
+                "thickness": material.thickness,
+            },
+            node_count=len(nodes),
+            displacements=displacements_flat,
+            element_count=len(elements),
+            stresses=all_stresses,
+            strains=all_strains,
+            von_mises=von_mises_elem,
+            max_displacement=max_disp,
+            max_von_mises_stress=max_vm,
+            max_stress_xx=max_sxx,
+            max_stress_yy=max_syy,
+            max_shear_xy=max_txy,
+            nodal_stresses=nodal_stresses.tolist(),
+            nodal_von_mises=nodal_von_mises,
+        )
+
+        return result, True, "Solution converged successfully"
+
+
+# Singleton
+fea_service = FEAService()
