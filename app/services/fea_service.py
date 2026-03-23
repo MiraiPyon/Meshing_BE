@@ -33,19 +33,23 @@ from app.engines.fea.material import MaterialModel, AnalysisType
 class FEAService:
     """Service xử lý FEA analysis."""
 
-    def solve(self, db: Session, req: FEASolveRequest) -> Tuple[FEAResultResponse, bool, str]:
+    def solve(self, db: Session, req: FEASolveRequest, user_id: UUID) -> Tuple[FEAResultResponse, bool, str]:
         """
         Run full FEA analysis.
 
         Args:
             db:  SQLAlchemy session
             req: FEASolveRequest
+            user_id: UUID of current user (for ownership check)
 
         Returns:
             (result, success, message)
         """
-        # 1. Load mesh
-        mesh = db.query(MeshModel).filter(MeshModel.id == req.mesh_id).first()
+        # 1. Load mesh (chỉ mesh thuộc về user)
+        mesh = db.query(MeshModel).join(GeometryModel).filter(
+            MeshModel.id == req.mesh_id,
+            GeometryModel.user_id == user_id,
+        ).first()
         if not mesh:
             raise ValueError(f"Mesh {req.mesh_id} not found")
 

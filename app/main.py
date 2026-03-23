@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.api.endpoints import router
+from app.api.auth import router as auth_router
 from app.core.config import settings
 from app.database.session import init_db
 
@@ -30,6 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(auth_router)
 
 
 @app.get("/")
