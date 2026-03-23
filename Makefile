@@ -2,7 +2,7 @@ SHELL := /bin/sh
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(PYTHON) -m pip
-COMPOSE := docker compose --env-file docker/.env -f docker/docker-compose.yml
+COMPOSE := docker compose --env-file .env -f docker/docker-compose.yml
 
 .PHONY: venv install bootstrap-env hooks secret-scan test lint format check ci up down run
 

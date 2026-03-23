@@ -4,13 +4,19 @@ from typing import List
 from uuid import UUID
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.database.session import get_db
-
-try:
-    import psycopg
-except ImportError:  # pragma: no cover - depends on runtime environment
-    psycopg = None
+from app.schemas.request import (
+    RectangleCreate,
+    CircleCreate,
+    PolygonCreate,
+    QuadMeshCreate,
+    DelaunayMeshCreate,
+)
+from app.schemas.response import GeometryResponse, MeshResponse, HealthResponse
+from app.schemas.fea_request import FEASolveRequest
+from app.schemas.fea_response import FEASolveResponse
+from app.services.mesh_service import mesh_service
+from app.services.fea_service import fea_service
 
 
 router = APIRouter()
@@ -24,30 +30,9 @@ def health() -> dict[str, str]:
 
 
 @router.get("/health/db", tags=["health"])
-def database_health() -> JSONResponse:
-    if psycopg is None:
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "unhealthy",
-                "database": "disconnected",
-                "reason": "psycopg is not installed",
-            },
-        )
-
+def database_health(db: Session = Depends(get_db)):
     try:
-        with psycopg.connect(
-            host=settings.db_host,
-            port=settings.db_port,
-            dbname=settings.db_name,
-            user=settings.db_user,
-            password=settings.db_pass,
-            connect_timeout=3,
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
-
+        db.execute("SELECT 1")
         return JSONResponse(content={"status": "ok", "database": "connected"})
     except Exception as exc:
         return JSONResponse(
@@ -60,25 +45,7 @@ def database_health() -> JSONResponse:
         )
 
 
-# ============== Geometry + Mesh + FEA ==============
-
-# Import lazily to avoid circular dependencies
-from app.schemas.request import (
-    RectangleCreate,
-    CircleCreate,
-    PolygonCreate,
-    QuadMeshCreate,
-    DelaunayMeshCreate,
-)
-from app.schemas.response import GeometryResponse, MeshResponse, HealthResponse
-from app.schemas.fea_request import FEASolveRequest
-from app.schemas.fea_response import FEASolveResponse
-from app.services.mesh_service import mesh_service
-from app.services.fea_service import fea_service
-from app.engines.fea.visualization import FEAVisualizer
-
-
-# --- Geometry endpoints ---
+# ============== Geometry endpoints ==============
 
 @router.post("/geometry/rectangle", response_model=GeometryResponse, status_code=status.HTTP_201_CREATED, tags=["geometry"])
 def create_rectangle(data: RectangleCreate, db: Session = Depends(get_db)):
@@ -115,7 +82,7 @@ def delete_geometry(geometry_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Geometry {geometry_id} not found")
 
 
-# --- Mesh endpoints ---
+# ============== Mesh endpoints ==============
 
 @router.post("/mesh/quad", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
 def create_quad_mesh(data: QuadMeshCreate, db: Session = Depends(get_db)):
@@ -153,7 +120,7 @@ def delete_mesh(mesh_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Mesh {mesh_id} not found")
 
 
-# --- FEA endpoints ---
+# ============== FEA endpoints ==============
 
 @router.post("/fea/solve", response_model=FEASolveResponse, status_code=status.HTTP_201_CREATED, tags=["fea"])
 def solve_fea(req: FEASolveRequest, db: Session = Depends(get_db)):

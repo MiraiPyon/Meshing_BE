@@ -1,5 +1,5 @@
 # Docker Compose configuration for 2D Meshing Project
-# Run with: docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+# Run with: docker compose --env-file .env -f docker/docker-compose.yml up -d
 services:
   # PostgreSQL Database Service
   db:
@@ -51,5 +51,3 @@ networks:
 volumes:
   postgres_data:
     driver: local
-
-# Note: keep secrets in docker/.env locally and commit only docker/.env.example

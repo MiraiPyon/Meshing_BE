@@ -23,12 +23,12 @@ API health endpoints:
 ./scripts/bootstrap-env.sh
 ```
 
-2. Update values in `docker/.env` with your local secrets.
+2. Update values in `.env` with your local secrets.
 
 3. Start database and tools:
 
 ```sh
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
 
 ## Developer commands
@@ -57,7 +57,7 @@ chmod +x .githooks/pre-commit scripts/precommit-secret-scan.sh scripts/bootstrap
 
 ### What is blocked
 
-- Committing `docker/.env`
+- Committing `.env`
 - Staged lines that look like real secrets (`SECRET=`, `PASSWORD=`, `API_KEY=`, `TOKEN=`, etc.)
 
 If needed, replace values with placeholders in tracked files and keep real values only in untracked env files.
