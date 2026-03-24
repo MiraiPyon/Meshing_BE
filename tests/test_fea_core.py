@@ -9,7 +9,6 @@ sys.path.insert(0, "e:/Code/Meshing_BE")
 import numpy as np
 
 from app.engines.fea.shape_functions import ShapeFunctions
-from app.engines.fea.gaussian_quadrature import GaussianQuadrature
 from app.engines.fea.material import MaterialModel, AnalysisType
 from app.engines.fea.stiffness import ElementStiffness
 from app.engines.fea.assembly import GlobalAssembler, BoundaryCondition, NodalForce
@@ -40,7 +39,6 @@ def test_cantilever_beam():
 
     nodes = np.array([[x_nodes[i], y_nodes[j]]
                       for i in range(nx + 1) for j in range(ny + 1)])
-    n_nodes = len(nodes)
 
     elements = []
     for i in range(nx):
@@ -108,11 +106,11 @@ def test_cantilever_beam():
     print("[PASS] uy increases toward tip (pure bending behavior)")
 
     # ---- 4. Euler-Bernoulli vs Timoshenko ----
-    I = t * h ** 3 / 12
+    inertia = t * h ** 3 / 12
     G = E / (2 * (1 + nu))
     A = t * h
-    beta = (12 * E * I) / (G * A * L ** 2)  # shear parameter
-    delta_euler = F_total * L ** 3 / (3 * E * I)
+    beta = (12 * E * inertia) / (G * A * L ** 2)  # shear parameter
+    delta_euler = F_total * L ** 3 / (3 * E * inertia)
     delta_timo = delta_euler * (3 + 3 * beta + beta ** 2) / (3 * (1 + beta))
     ratio = max_disp / delta_euler
     print(f"      Max disp: {max_disp:.4e}")
@@ -121,7 +119,7 @@ def test_cantilever_beam():
     assert 0.35 < ratio < 0.45, (
         f"Shear locking not in expected Timoshenko range (0.35-0.45): got {ratio:.4f}"
     )
-    print(f"[PASS] Result matches Timoshenko (bilinear quad shear locking)")
+    print("[PASS] Result matches Timoshenko (bilinear quad shear locking)")
 
     # ---- 5. Reaction force balance ----
     K_full = solver._K_full
@@ -176,6 +174,7 @@ def test_shape_functions():
     dN_dxi = dN_dxi_fn(0.5, -0.5)
     dN_deta = dN_deta_fn(0.5, -0.5)
     assert len(dN_dxi) == 4
+    assert len(dN_deta) == 4
 
     print("Shape functions: OK")
 

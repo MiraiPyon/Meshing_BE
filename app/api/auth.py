@@ -3,7 +3,7 @@ Auth Endpoints — Google OAuth2 → JWT.
 """
 
 import httpx
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from fastapi.security import HTTPBearer
 
 from app.schemas.auth import GoogleCallbackRequest, RefreshRequest, TokenResponse, UserResponse
@@ -18,13 +18,14 @@ security = HTTPBearer()
 def google_auth_url():
     """Trả về URL để redirect user sang Google OAuth."""
     import urllib.parse
+
     params = {
         "client_id": auth_service.settings.GOOGLE_CLIENT_ID,
         "redirect_uri": auth_service.settings.GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": "openid email profile",
         "access_type": "offline",
-        "prompt": "consent",
+        "include_granted_scopes": "true",
     }
     url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
     return {"url": url}
@@ -39,9 +40,23 @@ def google_callback(req: GoogleCallbackRequest):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Google OAuth error: {e.response.text}",
-        )
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) from e
+
+
+@router.get("/callback", response_model=TokenResponse)
+def google_callback_get(code: str = Query(..., description="Google authorization code")):
+    """Google redirect callback (GET) cho trường hợp test không có frontend."""
+    try:
+        return auth_service.google_auth(code)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Google OAuth error: {e.response.text}",
+        ) from e
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) from e
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -50,7 +65,7 @@ def refresh(req: RefreshRequest):
     try:
         return auth_service.refresh_tokens(req.refresh_token)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) from e
 
 
 @router.post("/logout")
@@ -70,4 +85,4 @@ def me(token: str = Depends(security)):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         return auth_service.user_to_response(user)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) from e

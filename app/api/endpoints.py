@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from typing import List
 from uuid import UUID
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -14,7 +15,7 @@ from app.schemas.request import (
     RectangleCreate, CircleCreate, PolygonCreate,
     QuadMeshCreate, DelaunayMeshCreate,
 )
-from app.schemas.response import GeometryResponse, MeshResponse, HealthResponse
+from app.schemas.response import GeometryResponse, MeshResponse
 from app.schemas.fea_request import FEASolveRequest
 from app.schemas.fea_response import FEASolveResponse
 from app.services.mesh_service import mesh_service
@@ -34,7 +35,7 @@ def health() -> dict[str, str]:
 @router.get("/health/db", tags=["health"])
 def database_health(db: Session = Depends(get_db)):
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return JSONResponse(content={"status": "ok", "database": "connected"})
     except Exception as exc:
         return JSONResponse(
@@ -87,7 +88,7 @@ def create_quad_mesh(data: QuadMeshCreate, db: Session = Depends(get_db), user=D
     try:
         return mesh_service.create_quad_mesh(db, data, user.id)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 @router.post("/mesh/delaunay", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
@@ -95,7 +96,7 @@ def create_delaunay_mesh(data: DelaunayMeshCreate, db: Session = Depends(get_db)
     try:
         return mesh_service.create_delaunay_mesh(db, data, user.id)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 @router.get("/mesh/{mesh_id}", response_model=MeshResponse, tags=["mesh"])
@@ -128,6 +129,6 @@ def solve_fea(req: FEASolveRequest, db: Session = Depends(get_db), user=Depends(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
         return FEASolveResponse(result=result, success=success, message=message)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e

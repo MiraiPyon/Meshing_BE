@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class GoogleCallbackRequest(BaseModel):
@@ -27,5 +27,4 @@ class UserResponse(BaseModel):
     created_at: datetime
     is_active: bool = True
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

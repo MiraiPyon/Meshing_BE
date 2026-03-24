@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from uuid import UUID
 
@@ -32,8 +32,7 @@ class FEAResultResponse(BaseModel):
     nodal_stresses: Optional[List[List[float]]] = None  # [[sxx, syy, txy], ...] at nodes
     nodal_von_mises: Optional[List[float]] = None      # at nodes
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FEASolveResponse(BaseModel):

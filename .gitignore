@@ -39,6 +39,9 @@ coverage.xml
 *.log
 logs/
 
+# Local database artifacts
+meshing.db
+
 # OS
 .DS_Store
 Thumbs.db

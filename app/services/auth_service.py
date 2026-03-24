@@ -4,9 +4,9 @@ Auth Service — Google OAuth2 → JWT.
 
 import httpx
 import hashlib
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import UUID
 
 from app.core.config import settings
 from app.database.models import User, RefreshToken
@@ -32,6 +32,20 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _parse_uuid(value: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError as e:
+        raise ValueError("Invalid user id in token") from e
+
+
+def _to_utc(dt: datetime) -> datetime:
+    """Normalize datetime values from DB to timezone-aware UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def create_tokens(user: User) -> TokenResponse:
     """Tạo access + refresh tokens cho user."""
     jwt = _import_jwt()
@@ -49,22 +63,21 @@ def create_tokens(user: User) -> TokenResponse:
     }
     access_token = jwt.encode(access_payload, secret, algorithm="HS256")
 
-    # Refresh token
-    refresh_token = secrets.token_urlsafe(64)
+    # Refresh token (JWT)
     refresh_payload = {
         "sub": str(user.id),
         "type": "refresh",
         "iat": now,
         "exp": now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     }
-    refresh_token_signed = jwt.encode(refresh_payload, secret, algorithm="HS256")
+    refresh_token = jwt.encode(refresh_payload, secret, algorithm="HS256")
 
     # Lưu refresh token hash vào DB
     db = SessionLocal()
     try:
         db.add(RefreshToken(
             user_id=user.id,
-            token_hash=_hash_token(refresh_token_signed),
+            token_hash=_hash_token(refresh_token),
             expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         ))
         db.commit()
@@ -97,7 +110,7 @@ def refresh_tokens(refresh_token: str) -> TokenResponse:
         if payload.get("type") != "refresh":
             raise ValueError("Invalid token type")
 
-        user_id = payload["sub"]
+        user_id = _parse_uuid(payload["sub"])
         token_hash = _hash_token(refresh_token)
 
         # Check token chưa bị revoke
@@ -107,7 +120,8 @@ def refresh_tokens(refresh_token: str) -> TokenResponse:
             RefreshToken.revoked == False,
         ).first()
 
-        if not stored or stored.expires_at < datetime.now(timezone.utc):
+        now_utc = datetime.now(timezone.utc)
+        if not stored or _to_utc(stored.expires_at) < now_utc:
             raise ValueError("Token expired or revoked")
 
         # Revoke old refresh token
@@ -131,8 +145,9 @@ def revoke_refresh_token(refresh_token: str) -> bool:
     try:
         payload = jwt.decode(refresh_token, settings.JWT_SECRET, algorithms=["HS256"])
         token_hash = _hash_token(refresh_token)
+        user_id = _parse_uuid(payload["sub"])
         stored = db.query(RefreshToken).filter(
-            RefreshToken.user_id == payload["sub"],
+            RefreshToken.user_id == user_id,
             RefreshToken.token_hash == token_hash,
         ).first()
         if stored:
@@ -213,7 +228,8 @@ def google_auth(code: str) -> TokenResponse:
 def get_user_by_id(user_id: str) -> Optional[User]:
     db = SessionLocal()
     try:
-        return db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        parsed_user_id = _parse_uuid(user_id)
+        return db.query(User).filter(User.id == parsed_user_id, User.is_active == True).first()
     finally:
         db.close()
 

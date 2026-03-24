@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
@@ -36,8 +36,7 @@ class GeometryResponse(BaseModel):
     bounds: Optional[Bounds] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============== Mesh Responses ==============
@@ -56,8 +55,7 @@ class MeshResponse(BaseModel):
     bounds: Bounds
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============== Health Check ==============
