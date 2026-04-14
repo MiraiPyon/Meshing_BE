@@ -167,13 +167,14 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
-def exchange_google_code(code: str) -> dict:
+def exchange_google_code(code: str, redirect_uri: str | None = None) -> dict:
     """Đổi authorization code lấy tokens từ Google."""
+    effective_redirect_uri = redirect_uri or settings.GOOGLE_REDIRECT_URI
     resp = httpx.post(GOOGLE_TOKEN_URL, data={
         "code": code,
         "client_id": settings.GOOGLE_CLIENT_ID,
         "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri": effective_redirect_uri,
         "grant_type": "authorization_code",
     }, timeout=10)
     resp.raise_for_status()
@@ -189,7 +190,7 @@ def get_google_userinfo(access_token: str) -> dict:
     return resp.json()
 
 
-def google_auth(code: str) -> TokenResponse:
+def google_auth(code: str, redirect_uri: str | None = None) -> TokenResponse:
     """
     Full Google OAuth2 flow:
       1. Exchange code → tokens
@@ -198,7 +199,7 @@ def google_auth(code: str) -> TokenResponse:
       4. Return JWT tokens
     """
     # 1. Get Google tokens
-    google_tokens = exchange_google_code(code)
+    google_tokens = exchange_google_code(code, redirect_uri=redirect_uri)
     access_token = google_tokens["access_token"]
 
     # 2. Get user info

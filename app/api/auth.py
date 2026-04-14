@@ -35,7 +35,7 @@ def google_auth_url():
 def google_callback(req: GoogleCallbackRequest):
     """Đổi Google auth code → JWT tokens."""
     try:
-        return auth_service.google_auth(req.code)
+        return auth_service.google_auth(req.code, redirect_uri=req.redirect_uri)
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

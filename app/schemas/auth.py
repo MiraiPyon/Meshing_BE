@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field, ConfigDict
 class GoogleCallbackRequest(BaseModel):
     """Frontend gửi authorization code từ Google OAuth flow."""
     code: str = Field(description="Authorization code từ Google OAuth callback")
+    redirect_uri: str | None = Field(
+        default=None,
+        description="Redirect URI FE đã dùng khi gọi Google — phải khớp chính xác"
+    )
 
 
 class RefreshRequest(BaseModel):
