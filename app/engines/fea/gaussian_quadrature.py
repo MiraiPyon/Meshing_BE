@@ -48,24 +48,33 @@ class GaussianQuadrature:
     @staticmethod
     def triangle_7pt() -> List[Tuple[float, float, float]]:
         """
-        7 điểm Gauss cho tam giác (degree of precision = 4).
+        7 điểm Gauss cho tam giác (Dunavant, exact đến bậc 5).
+
+        Lưu ý: các trọng số Dunavant chuẩn có tổng bằng 1.0 trên tam giác
+        tham chiếu diện tích 1.0, trong khi phần tử tam giác chuẩn ở đây có
+        diện tích 0.5. Vì vậy ta nhân 0.5 cho toàn bộ trọng số.
 
         Returns:
             List of (xi, eta, weight)
         """
-        w1 = 9.0 / 80.0
-        w2 = 5.0 / 24.0
+        scale = 0.5
+        w1 = 0.225000000000000 * scale
+        w2 = 0.132394152788506 * scale
+        w3 = 0.125939180544827 * scale
+
+        a = 0.059715871789770
+        b = 0.470142064105115
+        c = 0.797426985353087
+        d = 0.101286507323456
 
         return [
-            # 3 mid-edge points
-            (0.5, 0.5, w1),
-            (0.0, 0.5, w1),
-            (0.5, 0.0, w1),
-            # 3 interior points
-            (1.0 / 3.0, 1.0 / 3.0, w2),
-            (0.2, 0.6, w2),
-            (0.6, 0.2, w2),
-            (0.2, 0.2, w2),
+            (1.0 / 3.0, 1.0 / 3.0, w1),
+            (a, b, w2),
+            (b, a, w2),
+            (b, b, w2),
+            (c, d, w3),
+            (d, c, w3),
+            (d, d, w3),
         ]
 
     # ---- 2×2 Gauss (tứ giác) ----

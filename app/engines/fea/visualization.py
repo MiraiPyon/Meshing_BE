@@ -92,7 +92,7 @@ class FEAVisualizer:
 
         # ---- Node IDs ----
         if show_node_ids:
-            for i, (xi, yi) in enumerate(zip(x_def, y_def)):
+            for i, (xi, yi) in enumerate(zip(x_def, y_def, strict=True)):
                 ax.text(xi, yi, str(i), fontsize=5, ha="center", va="bottom", zorder=6)
 
         # ---- Colorbar ----
@@ -138,11 +138,7 @@ class FEAVisualizer:
             else:
                 values = scalar_field  # nodal values
 
-            for i, elem in enumerate(elements):
-                verts = [(x_def[n], y_def[n]) for n in elem] + [(x_def[elem[0]], y_def[elem[0]])]
-                tc = tri.Triangulation(nodes[:, 0], nodes[:, 1], elements)
-                break
-            else:
+            if not elements:
                 tc = tri.Triangulation(nodes[:, 0], nodes[:, 1], elements)
                 ax.tripcolor(tc, values, cmap=cmap, shading="flat")
                 return
@@ -182,7 +178,7 @@ class FEAVisualizer:
             for elem in elements:
                 xs = [x_def[n] for n in elem]
                 ys = [y_def[n] for n in elem]
-                quads.append(list(zip(xs, ys)))
+                quads.append(list(zip(xs, ys, strict=True)))
                 # Average scalar value for this element
                 val = np.mean([scalar_field[n] for n in elem])
                 colors.append(val)

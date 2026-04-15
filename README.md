@@ -193,6 +193,9 @@ Meshing_BE/
 
 ```sh
 make test          # Run test suite
+make test-fea      # Run focused FEA test suite
+make test-fea-stress # Repeat focused FEA suite 5x (stability burn-in)
+make test-stress   # Repeat full suite 5x (broader stability burn-in)
 make lint          # Ruff lint checks
 make format        # Black formatter
 make check        # Lint + tests

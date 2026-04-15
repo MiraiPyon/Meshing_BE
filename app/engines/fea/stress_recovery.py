@@ -7,7 +7,6 @@ from typing import List, Tuple
 from app.engines.fea.shape_functions import ShapeFunctions
 from app.engines.fea.gaussian_quadrature import GaussianQuadrature
 from app.engines.fea.material import MaterialModel, AnalysisType
-from app.engines.fea.stiffness import ElementStiffness
 
 
 class StressRecovery:
@@ -129,18 +128,11 @@ class StressRecovery:
         """
         n_nodes = len(nodes)
         node_stress_sum = np.zeros((n_nodes, 3))
-        node_strain_sum = np.zeros((n_nodes, 3))
         weight_sum = np.zeros(n_nodes)
 
         for e_idx, elem in enumerate(elements):
             coords = nodes[elem]
-            u_elem = self._extract_elem_disp(elem, displacements)
-
             is_tri = len(elem) == 3
-            if is_tri:
-                dN_dxi, dN_deta = self.sf.triangle_linear_derivatives()
-            else:
-                dN_dxi_fn, dN_deta_fn = self.sf.quad_bilinear_derivatives()
 
             gp_stress = gp_stresses[e_idx]
             gp_coords_elem = gp_gp_coords[e_idx]
@@ -190,7 +182,6 @@ class StressRecovery:
     ) -> np.ndarray:
         """Compute strain at each node by averaging element contributions."""
         n_nodes = len(nodes)
-        n_dof = 2 * n_nodes
 
         strain_sum = np.zeros((n_nodes, 3))
         count = np.zeros(n_nodes)
@@ -202,13 +193,11 @@ class StressRecovery:
 
             # Compute strain at element centroid
             if n_nodes_elem == 3:
-                gps = GaussianQuadrature.triangle_3pt()
                 dN_dxi, dN_deta = self.sf.triangle_linear_derivatives()
                 centroid_xi, centroid_eta = 1.0 / 3.0, 1.0 / 3.0
                 dN_dxi_gp = dN_dxi
                 dN_deta_gp = dN_deta
             else:
-                gps = GaussianQuadrature.quad_2x2()
                 dN_dxi_fn, dN_deta_fn = self.sf.quad_bilinear_derivatives()
                 centroid_xi, centroid_eta = 0.0, 0.0
                 dN_dxi_gp = dN_dxi_fn(centroid_xi, centroid_eta)

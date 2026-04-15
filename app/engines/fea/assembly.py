@@ -5,9 +5,8 @@ Hỗ trợ Dirichlet (displacement) và Neumann (force) boundary conditions.
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import spsolve
 from typing import Tuple, List, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -190,11 +189,11 @@ class GlobalAssembler:
 
             # 2-point Gauss for edge
             gp_xi = np.array([-1.0 / np.sqrt(3.0), 1.0 / np.sqrt(3.0)])
-            gp_w = np.array([0.5, 0.5])
+            gp_w = np.array([1.0, 1.0])
 
             # Shape functions for 2-node line element
             # N1 = (1 - xi)/2, N2 = (1 + xi)/2
-            for xi, w in zip(gp_xi, gp_w):
+            for xi, w in zip(gp_xi, gp_w, strict=True):
                 N1 = (1.0 - xi) / 2.0
                 N2 = (1.0 + xi) / 2.0
 
@@ -274,38 +273,26 @@ class GlobalAssembler:
 
         Trả về K_reduced (n_free, n_free) sparse và F_reduced.
         """
-        K_coo = K.tocoo()
-        F_mod = F.copy()
-
-        # Xác định all fixed DOFs
-        fixed_dofs = set()
+        # Gộp BC theo DOF (nếu trùng DOF, giữ giá trị cuối cùng)
+        bc_values = {}
         for bc in bc_list:
-            fixed_dofs.add(self._dof_index(bc.node_id, bc.dof))
+            bc_values[self._dof_index(bc.node_id, bc.dof)] = bc.value
 
+        fixed_list = sorted(bc_values.keys())
+        fixed_dofs = set(fixed_list)
         free_dofs = [d for d in range(self.n_dof) if d not in fixed_dofs]
-        fixed_list = sorted(fixed_dofs)
-        free_set = set(free_dofs)
 
-        # Filter COO data: keep only rows/cols in free_dofs
-        mask = [r in free_set and c in free_set for r, c in zip(K_coo.row, K_coo.col)]
-        rows = K_coo.row[mask]
-        cols = K_coo.col[mask]
-        data = K_coo.data[mask]
+        # K_ff
+        K_reduced = K[free_dofs, :][:, free_dofs].tocsr()
 
-        # Remap indices to reduced space
-        index_map = {old: new for new, old in enumerate(free_dofs)}
-        rows = np.array([index_map[r] for r in rows])
-        cols = np.array([index_map[c] for c in cols])
+        # F_f = F_f - K_fc * u_c
+        F_mod = F.copy()
+        if fixed_list:
+            u_fixed = np.array([bc_values[d] for d in fixed_list], dtype=float)
+            correction = np.asarray(K[:, fixed_list] @ u_fixed).reshape(-1)
+            F_mod -= correction
 
-        n_free = len(free_dofs)
-        K_reduced = sp.csr_matrix((data, (rows, cols)), shape=(n_free, n_free))
-
-        # Điều chỉnh F: F_i -= Σ K_ij * u_j (với j là fixed)
-        for bc in bc_list:
-            dof_j = self._dof_index(bc.node_id, bc.dof)
-            F_mod[:] -= K[dof_j, :] * bc.value
-
-        F_reduced = np.delete(F_mod, list(fixed_dofs))
+        F_reduced = F_mod[free_dofs]
 
         return K_reduced, F_reduced, free_dofs, fixed_dofs
 
@@ -334,8 +321,14 @@ class GlobalAssembler:
         """
         reactions = np.zeros(self.n_dof)
 
+        u_vec = np.asarray(u_full)
+        if u_vec.ndim == 2:
+            u_vec = u_vec.reshape(-1)
+        if u_vec.shape[0] != self.n_dof:
+            raise ValueError(f"u_full has incompatible size {u_vec.shape[0]}, expected {self.n_dof}")
+
         # R = K @ u
-        r_internal = K_full @ u_full
+        r_internal = K_full @ u_vec
 
         if F_external is not None:
             r_internal = r_internal - F_external

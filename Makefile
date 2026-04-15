@@ -6,7 +6,7 @@ COMPOSE := docker compose --env-file docker/.env -f docker/docker-compose.yml
 LINT_PATHS := app/api app/core tests
 PORT ?= 8000
 
-.PHONY: venv install bootstrap-env hooks secret-scan test lint format check ci up down run run-alt
+.PHONY: venv install bootstrap-env hooks secret-scan test test-fea test-fea-stress test-stress lint format check ci up down run run-alt
 
 venv:
 	/usr/bin/python -m venv $(VENV)
@@ -26,6 +26,23 @@ secret-scan:
 
 test:
 	$(PYTHON) -m pytest -q
+
+test-fea:
+	$(PYTHON) -m pytest -q tests/test_fea_*.py
+
+test-fea-stress:
+	@set -e; \
+	for i in 1 2 3 4 5; do \
+		echo "[fea-stress] run $$i/5"; \
+		$(PYTHON) -m pytest -q tests/test_fea_*.py; \
+	done
+
+test-stress:
+	@set -e; \
+	for i in 1 2 3 4 5; do \
+		echo "[stress] run $$i/5"; \
+		$(PYTHON) -m pytest -q; \
+	done
 
 lint:
 	$(PYTHON) -m ruff check $(LINT_PATHS)

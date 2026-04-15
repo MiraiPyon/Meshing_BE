@@ -4,7 +4,6 @@ K_e = ∫ B^T · D · B · t · dA
 """
 
 import numpy as np
-from typing import Tuple, List
 from app.engines.fea.shape_functions import ShapeFunctions
 from app.engines.fea.gaussian_quadrature import GaussianQuadrature
 from app.engines.fea.material import MaterialModel, AnalysisType

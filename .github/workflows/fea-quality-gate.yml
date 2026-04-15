@@ -1,0 +1,37 @@
+name: FEA Quality Gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  fea-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint FEA scope
+        run: python -m ruff check app/engines/fea tests/test_fea_*.py
+
+      - name: Run focused FEA tests
+        run: make test-fea
+
+      - name: Stress FEA tests (5x)
+        run: make test-fea-stress

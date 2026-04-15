@@ -75,9 +75,9 @@ def test_cantilever_beam():
     ]
 
     # ---- Solve ----
-    u_dof, success, message = solver.run(bc_list, nodal_forces)
+    u_nodes, success, message = solver.run(bc_list, nodal_forces)
     assert success, f"Solver failed: {message}"
-    u_nodes = u_dof.reshape(-1, 2)  # (n_nodes, 2)
+    assert u_nodes.shape == (len(nodes), 2)
     print(f"[PASS] Solver converged: {message}")
 
     # ---- 1. Positive displacement ----
@@ -124,7 +124,7 @@ def test_cantilever_beam():
     # ---- 5. Reaction force balance ----
     K_full = solver._K_full
     F_full = solver._F  # original force vector before BC elimination
-    reactions = solver.assembler.recover_reactions(K_full, u_dof, bc_list, F_external=F_full)
+    reactions = solver.assembler.recover_reactions(K_full, u_nodes, bc_list, F_external=F_full)
     # Sum reactions at fixed nodes (unique — both ux and uy contribute to R_y)
     fixed_nodes = set(bc.node_id for bc in bc_list)
     sum_reactions_y = sum(reactions[2 * n + 1] for n in fixed_nodes)
@@ -136,7 +136,8 @@ def test_cantilever_beam():
 
     # ---- 6. Strain energy vs external work ----
     # Strain energy: U = 0.5 * F^T * u (using reduced vectors)
-    u_reduced_vec = np.array([u_dof[d] for d in solver._free_dofs])
+    u_full_vec = u_nodes.reshape(-1)
+    u_reduced_vec = np.array([u_full_vec[d] for d in solver._free_dofs])
     F_reduced_vec = solver._F_reduced
     strain_energy = 0.5 * np.dot(F_reduced_vec, u_reduced_vec)
     # External work: W = 0.5 * Σ F_i * u_i (at loaded nodes, NOT max_disp)

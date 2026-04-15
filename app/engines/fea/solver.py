@@ -5,7 +5,7 @@ Sử dụng scipy.sparse.linalg.spsolve cho hệ sparse lớn.
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import spsolve, factorized
+from scipy.sparse.linalg import factorized
 from typing import Tuple, List, Optional
 from dataclasses import dataclass
 
@@ -73,7 +73,6 @@ class FEASolver:
         """Build global stiffness matrix K."""
         def K_elem_fn(e_idx: int) -> np.ndarray:
             coords = self.assembler.get_element_coords(e_idx)
-            n_nodes = len(coords)
             order = self.config.integration_order
             return self.stiffness_builder.compute(coords, order)
 
@@ -120,6 +119,12 @@ class FEASolver:
                     method="penalty",
                     penalty=self.config.penalty,
                 )
+            # Penalty keeps full system size; keep all DOFs for expansion.
+            self._free_dofs = list(range(self.n_dof))
+            self._fixed_dofs = {
+                self.assembler._dof_index(bc.node_id, bc.dof)
+                for bc in bc_list
+            }
 
         return self
 
@@ -138,6 +143,12 @@ class FEASolver:
             return self._empty_u(), False, "Call apply_boundary_conditions() first"
 
         try:
+            # All DOFs constrained (elimination): no linear solve needed.
+            if self._K_reduced.shape[0] == 0:
+                u_full = self._expand_u(np.array([])).reshape(self.n_nodes, 2)
+                self._u_reduced = np.array([])
+                return u_full, True, "All DOFs constrained; prescribed displacement field returned"
+
             # Convert sparse K to CSC upfront to avoid SparseEfficiencyWarning in splu
             if sp.issparse(self._K_reduced):
                 K_work = self._K_reduced.tocsc()
@@ -147,7 +158,7 @@ class FEASolver:
             u_reduced = solve_func(self._F_reduced)
 
             # Expand to full DOF vector
-            u_full = self._expand_u(u_reduced)
+            u_full = self._expand_u(u_reduced).reshape(self.n_nodes, 2)
             self._u_reduced = u_reduced
 
             return u_full, True, "Solution converged"
