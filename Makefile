@@ -1,6 +1,7 @@
 SHELL := /bin/sh
 VENV := .venv
-PYTHON := $(VENV)/bin/python
+VENV_PYTHON := $(VENV)/bin/python
+PYTHON = $(shell if [ -x "$(VENV_PYTHON)" ]; then printf '%s' "$(VENV_PYTHON)"; else command -v python3 || command -v python; fi)
 PIP := $(PYTHON) -m pip
 COMPOSE := docker compose --env-file docker/.env -f docker/docker-compose.yml
 LINT_PATHS := app/api app/core tests
@@ -12,7 +13,7 @@ venv:
 	/usr/bin/python -m venv $(VENV)
 
 install: venv
-	$(PIP) install -r requirements.txt -r requirements-dev.txt
+	$(VENV_PYTHON) -m pip install -r requirements.txt -r requirements-dev.txt
 
 bootstrap-env:
 	./scripts/bootstrap-env.sh
