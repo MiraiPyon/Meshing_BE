@@ -123,11 +123,8 @@ class MaterialModel:
         """
         sxx, syy, txy = stress[0], stress[1], stress[2]
 
-        # Principal stresses
-        s1 = (sxx + syy) / 2.0 + np.sqrt(((sxx - syy) / 2.0) ** 2 + txy ** 2)
-        s2 = (sxx + syy) / 2.0 - np.sqrt(((sxx - syy) / 2.0) ** 2 + txy ** 2)
-
-        sigma_vm = np.sqrt(s1 ** 2 + s2 ** 2 - s1 * s2 + 3.0 * txy ** 2)
+        # Tính trực tiếp từ ứng suất Cartesian
+        sigma_vm = np.sqrt(sxx ** 2 + syy ** 2 - sxx * syy + 3.0 * txy ** 2)
         return float(sigma_vm)
 
     # ---- Common materials factory ----
