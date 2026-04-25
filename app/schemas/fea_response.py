@@ -32,6 +32,12 @@ class FEAResultResponse(BaseModel):
     nodal_stresses: Optional[List[List[float]]] = None  # [[sxx, syy, txy], ...] at nodes
     nodal_von_mises: Optional[List[float]] = None      # at nodes
 
+    # Support reactions and cantilever analytical checks.
+    reactions: Optional[List[List[float]]] = None       # [[rx, ry], ...] per node
+    sum_reaction_x: Optional[float] = None
+    sum_reaction_y: Optional[float] = None
+    cantilever_benchmark: Optional[dict] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

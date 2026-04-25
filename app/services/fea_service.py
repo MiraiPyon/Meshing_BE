@@ -27,7 +27,7 @@ from app.engines.fea.assembly import (
 )
 from app.engines.fea.solver import FEASolver, SolverConfig
 from app.engines.fea.stress_recovery import StressRecovery
-from app.engines.fea.material import MaterialModel, AnalysisType
+from app.engines.fea.cantilever_analytical import evaluate_cantilever_benchmark
 
 
 class FEAService:
@@ -134,6 +134,30 @@ class FEAService:
         if not success:
             return None, False, message
 
+        reactions_matrix = None
+        sum_reaction_x = None
+        sum_reaction_y = None
+        if solver._K_full is not None and solver._F is not None and bc_list:
+            reactions_full = solver.assembler.recover_reactions(
+                solver._K_full,
+                u_full,
+                bc_list,
+                F_external=solver._F,
+            )
+            reactions_matrix = reactions_full.reshape(-1, 2)
+            sum_reaction_x = float(np.sum(reactions_matrix[:, 0]))
+            sum_reaction_y = float(np.sum(reactions_matrix[:, 1]))
+
+        cantilever_benchmark = evaluate_cantilever_benchmark(
+            nodes=nodes,
+            displacements=u_full,
+            material=material,
+            bc_list=bc_list,
+            nodal_forces=nodal_forces,
+            line_loads=line_loads,
+            reactions=None if reactions_matrix is None else reactions_matrix.reshape(-1),
+        )
+
         # 8. Stress recovery
         stress_rec = StressRecovery(material, analysis_type)
 
@@ -210,6 +234,10 @@ class FEAService:
             max_shear_xy=max_txy,
             nodal_stresses=nodal_stresses.tolist(),
             nodal_von_mises=nodal_von_mises,
+            reactions=None if reactions_matrix is None else reactions_matrix.tolist(),
+            sum_reaction_x=sum_reaction_x,
+            sum_reaction_y=sum_reaction_y,
+            cantilever_benchmark=cantilever_benchmark,
         )
 
         return result, True, "Solution converged successfully"

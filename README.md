@@ -22,6 +22,7 @@ Backend API cho bài toán **tạo lưới (Meshing)** và **phân tích phần 
 - **Ma trận độ cứng** phần tử → lắp ráp tổng thể K (sparse)
 - **Giải K·u = F** — Dirichlet + Neumann BC (elimination method)
 - **Stress recovery** — ε, σ (σ_xx, σ_yy, τ_xy), σ_von_mises
+- **Benchmark payload** — reaction forces, force-balance check, cantilever analytical ratios
 - **Visualization** — contour plot (PNG) của displacement/stress/von_mises
 
 ---
@@ -45,7 +46,7 @@ Sau đó mở: `http://localhost:8000/docs` (Swagger UI)
 2. Redirect user sang URL đó       → User đăng nhập Google
 3. Google redirect về /api/auth/callback?code=xxx
 4. POST /api/auth/callback {code} → Nhận JWT tokens
-5. Gắi Authorization: Bearer <access_token> cho các API protected
+5. Gắn Authorization: Bearer <access_token> cho các API protected
 6. Hết hạn → POST /api/auth/refresh {refresh_token} → token mới
 ```
 
@@ -136,6 +137,54 @@ curl -X POST http://localhost:8000/api/fea/solve \
 
 ---
 
+## Benchmark: Section IV (editor_in_chief.pdf)
+
+Repo có benchmark kiểm chứng cantilever theo bài báo **Oladejo et al. (2018)**,
+`docs/editor_in_chief.txt` (Section IV/V), dùng đúng bộ tham số:
+
+| Tham số | Giá trị |
+|---------|---------|
+| Tải trọng `P` | 10 kN (10 000 N) |
+| Chiều cao `h` | 1.0 m |
+| Chiều dài `L` | 10 m |
+| Hệ số Poisson `ν` | 0.3 |
+| Mô đun Young `E` | 2×10¹¹ N/m² |
+| Bề dày `t` | 1.0 m (unit width) |
+
+**Nghiệm giải tích Euler-Bernoulli** (Eq. 2 trong bài báo):
+
+```
+δ_max = PL³ / (3EI)  với  I = t·h³/12 = 0.0833 m⁴
+      = (10000 × 10³) / (3 × 2e11 × 0.0833)
+      = 2.00 × 10⁻⁴ m  ≈ 0.20 mm
+```
+
+### Kết quả so sánh (Q4 bilinear, plane stress)
+
+| Lưới | nx × ny | Tip deflection FEA | Exact | Sai số |
+|------|---------|-------------------|-------|--------|
+| Coarse | 4 × 2 | −5.85 × 10⁻⁵ m | −2.00 × 10⁻⁴ m | 70.8% |
+| Fine | 10 × 2 | −1.42 × 10⁻⁴ m | −2.00 × 10⁻⁴ m | 28.9% |
+
+> **Nhận xét**: Kết quả định tính **phù hợp với Section V của bài báo** —
+> lưới fine cho kết quả gần nghiệm chính xác hơn lưới coarse.
+> Sai số tuyệt đối lớn hơn trong bài báo gốc vì bài báo dùng **LST (6-nút tam giác)**
+> trong khi code này dùng **Q4 (4-nút tứ giác bilinear)** — phần tử Q4 gặp hiện tượng
+> **shear locking** khi tỉ lệ h/L nhỏ, làm giảm độ võng tính toán. Xu hướng hội tụ
+> khi tăng số phần tử là đúng với lý thuyết FEM.
+
+Benchmark test nằm trong `tests/test_fea_cantilever_analytical.py`, gồm so sánh lưới coarse/fine với nghiệm Euler-Bernoulli tại đầu tự do.
+
+Chạy benchmark:
+
+```sh
+make test-fea
+# hoặc
+.venv/bin/python -m pytest -q tests/test_fea_cantilever_analytical.py
+```
+
+---
+
 ## Cấu trúc project
 
 ```
@@ -179,7 +228,21 @@ Meshing_BE/
 │   ├── bootstrap-env.sh      # Tạo .env từ env.example
 │   └── precommit-secret-scan.sh
 ├── tests/
-│   └── test_fea_core.py      # 5 FEA validation tests
+│   ├── test_fea_core.py                      # Shape, material, stiffness, assembly, cantilever
+│   ├── test_fea_cantilever_analytical.py      # Section IV benchmark (Oladejo 2018)
+│   ├── test_fea_assembly_solver_cases.py      # BC elimination/penalty, reaction recovery
+│   ├── test_fea_convergence.py                # Q4 mesh convergence trend
+│   ├── test_fea_global_stiffness_properties.py # K symmetry, PD, rigid-body modes
+│   ├── test_fea_linear_system_properties.py   # Linearity, superposition, ordering invariance
+│   ├── test_fea_material_stiffness.py         # Hooke 2D, Von Mises, presets, K-elem
+│   ├── test_fea_patch_tests.py                # T3/Q4 patch tests (linear field exactness)
+│   ├── test_fea_randomized_invariants.py      # Randomized elimination vs penalty consistency
+│   ├── test_fea_shape_quadrature.py           # Shape functions, Gauss rules, B-matrix
+│   ├── test_fea_solver_edge_cases.py          # Edge cases (all DOF prescribed, invalid DOF)
+│   ├── test_fea_stress_recovery.py            # ε, σ, σ_vm recovery for T3 and Q4
+│   ├── test_fea_u_validation.py               # Non-zero Dirichlet BC partition correctness
+│   └── test_health.py                         # API health/DB endpoints
+│   # Total: 58 tests — all passing
 ├── .githooks/               # Pre-commit hooks
 ├── env.example              # Template biến môi trường
 ├── requirements.txt

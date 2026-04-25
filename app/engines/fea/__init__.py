@@ -5,6 +5,11 @@ from app.engines.fea.stiffness import ElementStiffness
 from app.engines.fea.assembly import GlobalAssembler
 from app.engines.fea.solver import FEASolver
 from app.engines.fea.stress_recovery import StressRecovery
+from app.engines.fea.cantilever_analytical import (
+    CantileverSection,
+    detect_rectangular_cantilever,
+    evaluate_cantilever_benchmark,
+)
 
 __all__ = [
     "ShapeFunctions",
@@ -14,4 +19,7 @@ __all__ = [
     "GlobalAssembler",
     "FEASolver",
     "StressRecovery",
+    "CantileverSection",
+    "detect_rectangular_cantilever",
+    "evaluate_cantilever_benchmark",
 ]

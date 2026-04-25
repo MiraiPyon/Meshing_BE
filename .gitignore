@@ -42,6 +42,10 @@ logs/
 # Local database artifacts
 meshing.db
 
+# Local research/reference artifacts
+docs/editor_in_chief.pdf
+docs/editor_in_chief.txt
+
 # OS
 .DS_Store
 Thumbs.db
