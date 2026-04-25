@@ -4,6 +4,13 @@ from typing import Tuple, List, Optional
 from app.engines.base import MeshEngine
 
 
+def _convert_to_int_list(item):
+    """Recursively convert numpy ints to Python ints."""
+    if hasattr(item, '__iter__') and not isinstance(item, (str, bytes)):
+        return [_convert_to_int_list(x) for x in item]
+    return int(item)
+
+
 class DelaunayMeshEngine(MeshEngine):
     """
     Engine tạo lưới tam giác sử dụng thuật toán Delaunay.
@@ -56,18 +63,7 @@ class DelaunayMeshEngine(MeshEngine):
             tri, all_points, points_array
         )
 
-        # Chuyển sang 1-based index
-        def convert_to_int_list(elem):
-            """Convert element to list of Python ints"""
-            result = []
-            for item in elem:
-                if hasattr(item, '__iter__') and not isinstance(item, str):
-                    result.extend(convert_to_int_list(item))
-                else:
-                    result.append(int(item))
-            return result
-
-        elements_1based = [[int(x) for x in convert_to_int_list(elem)] for elem in elements]
+        elements_1based = [[int(x) for x in _convert_to_int_list(elem)] for elem in elements]
 
         return all_points.tolist(), elements_1based
 
@@ -179,7 +175,7 @@ class DelaunayMeshEngineWithHoles(DelaunayMeshEngine):
                 if not in_hole:
                     elements.append(simplex.tolist())
 
-        elements_1based = [[int(x) for x in convert_to_int_list(elem)] for elem in elements]
+        elements_1based = [[int(x) for x in _convert_to_int_list(elem)] for elem in elements]
         return all_points.tolist(), elements_1based
 
     def _generate_interior_points_with_holes(

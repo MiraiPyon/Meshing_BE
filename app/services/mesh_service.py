@@ -14,10 +14,11 @@ from app.schemas.request import (
     PolygonCreate,
     QuadMeshCreate,
     DelaunayMeshCreate,
+    MeshFromSketchCreate,
 )
 from app.schemas.response import GeometryResponse, MeshResponse, Bounds
 from app.engines.quad_engine import QuadMeshEngineFlexible
-from app.engines.delaunay_engine import DelaunayMeshEngine
+from app.engines.delaunay_engine import DelaunayMeshEngine, DelaunayMeshEngineWithHoles
 from app.database.models import Geometry as GeometryModel
 from app.database.models import Mesh as MeshModel
 from app.database.models import GeometryType as GeometryTypeEnum
@@ -30,6 +31,7 @@ class MeshService:
     def __init__(self):
         self._quad_engine = QuadMeshEngineFlexible()
         self._delaunay_engine = DelaunayMeshEngine()
+        self._delaunay_holes_engine = DelaunayMeshEngineWithHoles()
 
     # ============== Geometry Methods ==============
 
@@ -229,6 +231,129 @@ class MeshService:
             db.commit()
             return True
         return False
+
+    def create_mesh_from_sketch(
+        self, db: Session, data: MeshFromSketchCreate, user_id: UUID,
+    ) -> MeshResponse:
+        """One-shot: lưu geometry + tạo mesh từ sketch (outer+holes)."""
+        outer = [tuple(p) for p in data.outer_boundary]
+        holes = [[tuple(p) for p in loop] for loop in data.holes]
+
+        # Compute bounds
+        xs = [p[0] for p in outer]
+        ys = [p[1] for p in outer]
+        all_points_combined = json.dumps({
+            "outer": data.outer_boundary,
+            "holes": data.holes,
+        })
+
+        geometry = GeometryModel(
+            user_id=user_id,
+            name=data.name,
+            geometry_type=GeometryTypeEnum.POLYGON,
+            points=all_points_combined,
+            closed=1,
+            bound_x_min=min(xs), bound_x_max=max(xs),
+            bound_y_min=min(ys), bound_y_max=max(ys),
+        )
+        db.add(geometry)
+        db.commit()
+        db.refresh(geometry)
+
+        if data.element_type == "quad":
+            x_min, x_max = min(xs), max(xs)
+            y_min, y_max = min(ys), max(ys)
+            nodes, elements = self._quad_engine.generate_flexible(
+                x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max,
+                nx=data.nx, ny=data.ny,
+            )
+            mesh_type = MeshTypeEnum.QUAD
+            mesh_name = f"{data.name}_quad_{data.nx}x{data.ny}"
+        else:
+            if holes:
+                nodes, elements = self._delaunay_holes_engine.generate_with_holes(
+                    outer_boundary=outer,
+                    holes=holes,
+                    resolution=20,
+                )
+            else:
+                nodes, elements = self._delaunay_engine.generate(
+                    points=outer,
+                    resolution=20,
+                    max_area=data.max_area,
+                    min_angle=data.min_angle,
+                )
+            mesh_type = MeshTypeEnum.DELAUNAY
+            mesh_name = f"{data.name}_delaunay"
+
+        mesh = MeshModel(
+            geometry_id=geometry.id,
+            mesh_type=mesh_type,
+            name=mesh_name,
+            node_count=len(nodes),
+            element_count=len(elements),
+            nodes=json.dumps(nodes),
+            elements=json.dumps(elements),
+        )
+        db.add(mesh)
+        db.commit()
+        db.refresh(mesh)
+        return self._mesh_to_response(db, mesh)
+
+    def export_mesh(self, db: Session, mesh_id: UUID, user_id: UUID, fmt: str) -> dict:
+        """Export mesh sang json/dat/csv."""
+        mesh = db.query(MeshModel).join(GeometryModel).filter(
+            MeshModel.id == mesh_id,
+            GeometryModel.user_id == user_id,
+        ).first()
+        if not mesh:
+            raise ValueError(f"Mesh {mesh_id} not found")
+
+        nodes = json.loads(mesh.nodes)
+        elements = json.loads(mesh.elements)
+
+        if fmt == "json":
+            return {
+                "format": "json",
+                "content_type": "application/json",
+                "filename": f"{mesh.name}.json",
+                "data": {"nodes": nodes, "elements": elements,
+                         "node_count": mesh.node_count, "element_count": mesh.element_count},
+            }
+
+        if fmt == "dat":
+            lines = [f"# Mesh: {mesh.name}",
+                     f"# Nodes: {mesh.node_count}  Elements: {mesh.element_count}",
+                     "NODES", f"{mesh.node_count}"]
+            for i, (x, y) in enumerate(nodes, 1):
+                lines.append(f"{i:6d}  {x:14.8f}  {y:14.8f}")
+            lines.append("ELEMENTS")
+            lines.append(f"{mesh.element_count}")
+            for i, elem in enumerate(elements, 1):
+                node_str = "  ".join(f"{n:6d}" for n in elem)
+                lines.append(f"{i:6d}  {node_str}")
+            return {
+                "format": "dat",
+                "content_type": "text/plain",
+                "filename": f"{mesh.name}.dat",
+                "data": "\n".join(lines),
+            }
+
+        if fmt == "csv":
+            node_lines = ["id,x,y"]
+            for i, (x, y) in enumerate(nodes, 1):
+                node_lines.append(f"{i},{x},{y}")
+            elem_lines = ["id," + ",".join(f"n{j+1}" for j in range(len(elements[0]))) if elements else "id"]
+            for i, elem in enumerate(elements, 1):
+                elem_lines.append(f"{i}," + ",".join(str(n) for n in elem))
+            return {
+                "format": "csv",
+                "content_type": "text/csv",
+                "filename": f"{mesh.name}_nodes.csv",
+                "data": {"nodes": "\n".join(node_lines), "elements": "\n".join(elem_lines)},
+            }
+
+        raise ValueError(f"Unknown format: {fmt}. Supported: json, dat, csv")
 
     # ============== Helper Methods ==============
 

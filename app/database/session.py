@@ -34,6 +34,7 @@ def get_db() -> Generator[Session, None, None]:
 def init_db():
     """Initialize database - create tables"""
     _fix_legacy_auth_schema()
+    _ensure_picture_column()
     Base.metadata.create_all(bind=engine)
 
 
@@ -63,3 +64,43 @@ def _fix_legacy_auth_schema() -> None:
         if row and row[0] != "uuid":
             conn.execute(text("DROP TABLE IF EXISTS refresh_tokens CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+
+
+def _ensure_picture_column() -> None:
+    """Add 'picture' column to users table if it doesn't exist yet.
+
+    Since the project doesn't use Alembic, this ensures the column
+    exists for databases created before the picture field was added.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'users'
+                  AND column_name = 'picture'
+                """
+            )
+        ).fetchone()
+
+        if not row:
+            # Column doesn't exist — check if table exists at all
+            table_exists = conn.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name = 'users'
+                    """
+                )
+            ).fetchone()
+            if table_exists:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN picture VARCHAR(512)")
+                )

@@ -56,3 +56,15 @@ class DelaunayMeshCreate(BaseModel):
     geometry_id: UUID
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa mỗi tam giác")
     min_angle: Optional[float] = Field(None, ge=20, le=33, description="Góc tối thiểu (độ)")
+
+
+class MeshFromSketchCreate(BaseModel):
+    """One-shot: tạo mesh từ sketch (outer loop + holes) không cần tạo geometry riêng"""
+    name: str = Field(default="sketch", description="Tên lưới")
+    outer_boundary: List[List[float]] = Field(..., min_length=3, description="Điểm biên ngoài [[x,y],...] ")
+    holes: List[List[List[float]]] = Field(default_factory=list, description="Danh sách holes [[[x,y],...],...]")
+    element_type: str = Field(default="delaunay", description="delaunay | quad")
+    max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa (Delaunay)")
+    min_angle: Optional[float] = Field(None, ge=20, le=33, description="Góc tối thiểu (Delaunay)")
+    nx: int = Field(10, ge=1, le=200, description="Số phần tử theo x (Quad)")
+    ny: int = Field(10, ge=1, le=200, description="Số phần tử theo y (Quad)")

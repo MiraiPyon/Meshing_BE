@@ -13,7 +13,7 @@ from app.database.session import get_db
 from app.core.deps import get_current_user
 from app.schemas.request import (
     RectangleCreate, CircleCreate, PolygonCreate,
-    QuadMeshCreate, DelaunayMeshCreate,
+    QuadMeshCreate, DelaunayMeshCreate, MeshFromSketchCreate,
 )
 from app.schemas.response import GeometryResponse, MeshResponse
 from app.schemas.fea_request import FEASolveRequest
@@ -117,6 +117,49 @@ def delete_mesh(mesh_id: UUID, db: Session = Depends(get_db), user=Depends(get_c
     success = mesh_service.delete_mesh(db, mesh_id, user.id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Mesh {mesh_id} not found")
+
+
+@router.post("/mesh/from-sketch", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
+def create_mesh_from_sketch(data: MeshFromSketchCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """One-shot: nhận sketch từ FE, tạo geometry + mesh trong một request."""
+    try:
+        return mesh_service.create_mesh_from_sketch(db, data, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+
+@router.get("/mesh/{mesh_id}/export", tags=["mesh"])
+def export_mesh(
+    mesh_id: UUID,
+    format: str = "json",
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Export mesh sang json/dat/csv. format=json|dat|csv"""
+    from fastapi.responses import PlainTextResponse, JSONResponse
+    try:
+        result = mesh_service.export_mesh(db, mesh_id, user.id, format)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+    if result["format"] == "json":
+        return JSONResponse(
+            content=result["data"],
+            headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+        )
+    if result["format"] == "csv":
+        # Return nodes CSV (elements available in result["data"]["elements"])
+        return PlainTextResponse(
+            content=result["data"]["nodes"],
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+        )
+    # dat
+    return PlainTextResponse(
+        content=result["data"],
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+    )
 
 
 # ============== FEA (protected) ==============

@@ -213,6 +213,7 @@ def google_auth(code: str, redirect_uri: str | None = None) -> TokenResponse:
             user = User(
                 email=info["email"],
                 name=info.get("name", info["email"]),
+                picture=info.get("picture"),
                 password_hash="",  # Google OAuth — no password
             )
             db.add(user)
@@ -220,6 +221,12 @@ def google_auth(code: str, redirect_uri: str | None = None) -> TokenResponse:
             db.refresh(user)
         elif not user.is_active:
             raise ValueError("Account is deactivated")
+        else:
+            # Update picture if changed
+            new_picture = info.get("picture")
+            if new_picture and user.picture != new_picture:
+                user.picture = new_picture
+                db.commit()
 
         return create_tokens(user)
     finally:
@@ -240,6 +247,7 @@ def user_to_response(user: User) -> UserResponse:
         id=str(user.id),
         email=user.email,
         name=user.name,
+        picture=getattr(user, "picture", None),
         created_at=user.created_at,
         is_active=user.is_active,
     )
