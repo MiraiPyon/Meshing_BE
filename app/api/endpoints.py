@@ -14,6 +14,7 @@ from app.core.deps import get_current_user
 from app.schemas.request import (
     RectangleCreate, CircleCreate, PolygonCreate,
     QuadMeshCreate, DelaunayMeshCreate, MeshFromSketchCreate,
+    BooleanOperationRequest,
 )
 from app.schemas.response import GeometryResponse, MeshResponse
 from app.schemas.fea_request import FEASolveRequest
@@ -79,6 +80,29 @@ def delete_geometry(geometry_id: UUID, db: Session = Depends(get_db), user=Depen
     success = mesh_service.delete_geometry(db, geometry_id, user.id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Geometry {geometry_id} not found")
+
+
+@router.post("/geometry/boolean", status_code=status.HTTP_200_OK, tags=["geometry"])
+def boolean_operation(
+    data: BooleanOperationRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """CSG boolean operation: union / subtract / intersect on two polygons."""
+    from app.engines.boolean_engine import boolean_operation as do_boolean
+    try:
+        result = do_boolean(
+            polygon_a=data.polygon_a,
+            polygon_b=data.polygon_b,
+            operation=data.operation,
+        )
+        return {
+            "name": data.name,
+            "operation": data.operation,
+            **result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 # ============== Mesh (protected) ==============

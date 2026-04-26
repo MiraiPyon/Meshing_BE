@@ -73,6 +73,7 @@ Sau đó mở: `http://localhost:8000/docs` (Swagger UI)
 | POST | `/api/geometry/rectangle` | Tạo hình chữ nhật |
 | POST | `/api/geometry/circle` | Tạo hình tròn |
 | POST | `/api/geometry/polygon` | Tạo polygon tự do |
+| POST | `/api/geometry/boolean` | Boolean CSG: union / subtract / intersect |
 | GET | `/api/geometry/{id}` | Lấy geometry |
 | GET | `/api/geometry` | List geometries của user |
 | DELETE | `/api/geometry/{id}` | Xóa geometry |

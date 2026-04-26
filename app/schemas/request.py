@@ -68,3 +68,12 @@ class MeshFromSketchCreate(BaseModel):
     min_angle: Optional[float] = Field(None, ge=20, le=33, description="Góc tối thiểu (Delaunay)")
     nx: int = Field(10, ge=1, le=200, description="Số phần tử theo x (Quad)")
     ny: int = Field(10, ge=1, le=200, description="Số phần tử theo y (Quad)")
+
+
+class BooleanOperationRequest(BaseModel):
+    """Request thực hiện boolean operation (union / subtract / intersect) trên 2 polygon."""
+    polygon_a: List[List[float]] = Field(..., min_length=3, description="Polygon A [[x,y], ...]")
+    polygon_b: List[List[float]] = Field(..., min_length=3, description="Polygon B [[x,y], ...]")
+    operation: str = Field(..., description="union | subtract | intersect")
+    name: str = Field(default="boolean_result", description="Tên kết quả")
+
