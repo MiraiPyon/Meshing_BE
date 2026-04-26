@@ -113,22 +113,22 @@ def test_quad_mesh_generates_ccw_elements():
     from app.engines.factory import MeshEngineFactory
     engine = MeshEngineFactory.create("quad")
     outer = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-    
+
     nodes, elements = engine.generate(points=outer, nx=2, ny=2)
     assert len(nodes) == 9
     assert len(elements) == 4
-    
+
     # Get first element nodes
     elem1 = elements[0]
     p1 = nodes[elem1[0] - 1]
     p2 = nodes[elem1[1] - 1]
     p3 = nodes[elem1[2] - 1]
     p4 = nodes[elem1[3] - 1]
-    
+
     # Check CCW orientation: Cross product of diagonals should be positive
     def cross2d(u, v):
         return u[0] * v[1] - u[1] * v[0]
-    
+
     v1 = [p3[0] - p1[0], p3[1] - p1[1]]
     v2 = [p4[0] - p2[0], p4[1] - p2[1]]
     assert cross2d(v1, v2) > 0, "Quad element is not CCW oriented (bowtie or CW)"
@@ -136,15 +136,15 @@ def test_quad_mesh_generates_ccw_elements():
 
 def test_strategy_pattern_uniform_generation():
     from app.engines.factory import MeshEngineFactory
-    
+
     quad_engine = MeshEngineFactory.create("quad")
     delaunay_engine = MeshEngineFactory.create("delaunay")
-    
+
     outer = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-    
+
     # Both should accept the exact same signature
     nodes_q, elements_q = quad_engine.generate(points=outer, holes=[], nx=2, ny=2)
     nodes_d, elements_d = delaunay_engine.generate(points=outer, holes=[], max_area=0.5)
-    
+
     assert len(nodes_q) > 0 and len(elements_q) > 0
     assert len(nodes_d) > 0 and len(elements_d) > 0

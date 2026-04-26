@@ -8,7 +8,7 @@ def test_create_rectangle_from_factory():
     user_id = uuid4()
     req = RectangleCreate(name="rect", x_min=0, y_min=0, width=10, height=20)
     geo = GeometryFactory.create_geometry(req, user_id)
-    
+
     assert geo.user_id == user_id
     assert geo.geometry_type == GeometryType.RECTANGLE
     assert geo.bound_x_max == 10
@@ -18,7 +18,7 @@ def test_create_circle_from_factory():
     user_id = uuid4()
     req = CircleCreate(name="circ", center_x=5, center_y=5, radius=3)
     geo = GeometryFactory.create_geometry(req, user_id)
-    
+
     assert geo.user_id == user_id
     assert geo.geometry_type == GeometryType.CIRCLE
     assert geo.bound_x_min == 2
@@ -29,7 +29,7 @@ def test_create_polygon_from_factory():
     user_id = uuid4()
     req = PolygonCreate(name="poly", points=[[0,0], [1,0], [1,1]], closed=True)
     geo = GeometryFactory.create_geometry(req, user_id)
-    
+
     assert geo.user_id == user_id
     assert geo.geometry_type == GeometryType.POLYGON
     assert geo.bound_x_max == 1

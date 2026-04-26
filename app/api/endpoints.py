@@ -33,10 +33,10 @@ router = APIRouter()
 @router.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
     await websocket.accept()
-    
+
     async def event_handler(event_name: str, payload: dict):
         await websocket.send_text(json.dumps({"event": event_name, "data": payload}))
-        
+
     mesh_events.subscribe(event_handler)
     try:
         while True:
