@@ -24,8 +24,8 @@ def _import_jwt():
     try:
         import jwt
         return jwt
-    except ImportError:
-        raise RuntimeError("pip install pyjwt")
+    except ImportError as err:
+        raise RuntimeError("pip install pyjwt") from err
 
 
 def _hash_token(token: str) -> str:
@@ -117,7 +117,7 @@ def refresh_tokens(refresh_token: str) -> TokenResponse:
         stored = db.query(RefreshToken).filter(
             RefreshToken.user_id == user_id,
             RefreshToken.token_hash == token_hash,
-            RefreshToken.revoked == False,
+            RefreshToken.revoked.is_(False),
         ).first()
 
         now_utc = datetime.now(timezone.utc)
@@ -129,7 +129,7 @@ def refresh_tokens(refresh_token: str) -> TokenResponse:
         db.commit()
 
         # Lấy user và tạo token mới
-        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        user = db.query(User).filter(User.id == user_id, User.is_active.is_(True)).first()
         if not user:
             raise ValueError("User not found")
 
@@ -237,7 +237,7 @@ def get_user_by_id(user_id: str) -> Optional[User]:
     db = SessionLocal()
     try:
         parsed_user_id = _parse_uuid(user_id)
-        return db.query(User).filter(User.id == parsed_user_id, User.is_active == True).first()
+        return db.query(User).filter(User.id == parsed_user_id, User.is_active.is_(True)).first()
     finally:
         db.close()
 

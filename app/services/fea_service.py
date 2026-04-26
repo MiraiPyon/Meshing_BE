@@ -4,23 +4,16 @@ FEAService – Business logic cho FEA analysis.
 
 import json
 import uuid
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
 import numpy as np
 
-from app.schemas.fea_request import (
-    FEASolveRequest,
-    MaterialInput,
-    BoundaryConditionInput,
-    NodalForceInput,
-    LineLoadInput,
-)
+from app.schemas.fea_request import FEASolveRequest
 from app.schemas.fea_response import FEAResultResponse
 from app.database.models import Mesh as MeshModel, Geometry as GeometryModel
 from app.engines.fea.material import MaterialModel, AnalysisType
 from app.engines.fea.assembly import (
-    GlobalAssembler,
     BoundaryCondition,
     NodalForce,
     LineLoad,
@@ -56,8 +49,8 @@ class FEAService:
         nodes_raw = json.loads(mesh.nodes)
         elements_raw = json.loads(mesh.elements)
         nodes = np.array(nodes_raw)
-        # elements: list of lists, convert to 1-based for FEA
-        elements = [[e + 1 for e in elem] for elem in elements_raw]
+        # Normalize mesh connectivity to 1-based indexing expected by FEA core.
+        elements = self._normalize_elements_to_one_based(elements_raw, len(nodes_raw))
 
         # 2. Material
         if req.material.preset:
@@ -241,6 +234,22 @@ class FEAService:
         )
 
         return result, True, "Solution converged successfully"
+
+    @staticmethod
+    def _normalize_elements_to_one_based(elements_raw: List[List[int]], node_count: int) -> List[List[int]]:
+        if not elements_raw:
+            return []
+
+        elements = [[int(v) for v in elem] for elem in elements_raw]
+        flat = [idx for elem in elements for idx in elem]
+        min_idx = min(flat)
+        max_idx = max(flat)
+
+        if min_idx == 0 and max_idx <= node_count - 1:
+            return [[idx + 1 for idx in elem] for elem in elements]
+        if min_idx >= 1 and max_idx <= node_count:
+            return elements
+        raise ValueError("Mesh element indices are out of valid node range")
 
 
 # Singleton

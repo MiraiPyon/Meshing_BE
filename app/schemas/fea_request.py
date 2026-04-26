@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from uuid import UUID
-from app.schemas.request import GeometryType
 
 
 class MaterialInput(BaseModel):

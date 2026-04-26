@@ -52,6 +52,11 @@ class MeshResponse(BaseModel):
     # Raw data cho frontend vẽ
     nodes: List[List[float]]  # n x 2
     elements: List[List[int]]  # m x 3 (triangle) hoặc m x 4 (quad)
+    element_type: Optional[str] = None  # T3 or Q4
+    dof_total: Optional[int] = None
+    dashboard: Optional[dict] = None
+    pslg: Optional[dict] = None
+    connectivity_matrices: Optional[dict] = None
     bounds: Bounds
     created_at: datetime
 

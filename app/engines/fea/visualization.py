@@ -175,12 +175,11 @@ class FEAVisualizer:
             # Element-wise coloring
             quads = []
             colors = []
-            for elem in elements:
+            for i, elem in enumerate(elements):
                 xs = [x_def[n] for n in elem]
                 ys = [y_def[n] for n in elem]
                 quads.append(list(zip(xs, ys, strict=True)))
-                # Average scalar value for this element
-                val = np.mean([scalar_field[n] for n in elem])
+                val = scalar_field[i]
                 colors.append(val)
 
             coll = PolyCollection(quads, array=np.array(colors), cmap=cmap, edgecolor="none")

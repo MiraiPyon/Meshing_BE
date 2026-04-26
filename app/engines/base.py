@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 class MeshEngine(ABC):
@@ -12,14 +12,18 @@ class MeshEngine(ABC):
     def generate(
         self,
         points: List[Tuple[float, float]],
+        holes: Optional[List[List[Tuple[float, float]]]] = None,
         resolution: int = 10,
-    ) -> Tuple[List[Tuple[float, float]], List[List[int]]]:
+        **kwargs
+    ) -> Tuple[List[List[float]], List[List[int]]]:
         """
-        Generate mesh from a list of 2D boundary points.
+        Generate mesh from a list of 2D boundary points and optional holes.
 
         Args:
             points:     Boundary points as (x, y) tuples.
+            holes:      Optional list of holes, where each hole is a list of points.
             resolution: Grid density hint.
+            **kwargs:   Additional algorithm-specific parameters (nx, ny, max_area, etc.)
 
         Returns:
             nodes:    Full list of node coordinates.

@@ -14,6 +14,7 @@ from app.core.deps import get_current_user
 from app.schemas.request import (
     RectangleCreate, CircleCreate, PolygonCreate,
     QuadMeshCreate, DelaunayMeshCreate, MeshFromSketchCreate,
+    ShapeDatMeshCreate,
     BooleanOperationRequest,
 )
 from app.schemas.response import GeometryResponse, MeshResponse
@@ -21,9 +22,28 @@ from app.schemas.fea_request import FEASolveRequest
 from app.schemas.fea_response import FEASolveResponse
 from app.services.mesh_service import mesh_service
 from app.services.fea_service import fea_service
-
+from app.services.events import mesh_events
+from fastapi import WebSocket, WebSocketDisconnect
+import json
 
 router = APIRouter()
+
+# ============== WebSockets (Observer) ==============
+
+@router.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    await websocket.accept()
+    
+    async def event_handler(event_name: str, payload: dict):
+        await websocket.send_text(json.dumps({"event": event_name, "data": payload}))
+        
+    mesh_events.subscribe(event_handler)
+    try:
+        while True:
+            # Keep connection alive, wait for client to disconnect
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        mesh_events.unsubscribe(event_handler)
 
 
 # ============== Health (public) ==============
@@ -152,6 +172,15 @@ def create_mesh_from_sketch(data: MeshFromSketchCreate, db: Session = Depends(ge
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
+@router.post("/mesh/from-shape-dat", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
+def create_mesh_from_shape_dat(data: ShapeDatMeshCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Generate mesh từ nội dung shape.dat (outer loop + optional holes)."""
+    try:
+        return mesh_service.create_mesh_from_shape_dat(db, data, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+
 @router.get("/mesh/{mesh_id}/export", tags=["mesh"])
 def export_mesh(
     mesh_id: UUID,
@@ -176,6 +205,12 @@ def export_mesh(
         return PlainTextResponse(
             content=result["data"]["nodes"],
             media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+        )
+    if result["format"] == "shape":
+        return PlainTextResponse(
+            content=result["data"],
+            media_type="text/plain",
             headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
         )
     # dat
