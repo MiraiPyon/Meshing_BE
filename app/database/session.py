@@ -35,6 +35,7 @@ def init_db():
     """Initialize database - create tables"""
     _fix_legacy_auth_schema()
     _ensure_picture_column()
+    _ensure_mesh_meshing_params_column()
     Base.metadata.create_all(bind=engine)
 
 
@@ -104,3 +105,38 @@ def _ensure_picture_column() -> None:
                 conn.execute(
                     text("ALTER TABLE users ADD COLUMN picture VARCHAR(512)")
                 )
+
+
+def _ensure_mesh_meshing_params_column() -> None:
+    """Add `meshing_params` column to meshes table if missing."""
+    if not database_url.startswith("postgresql"):
+        return
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'meshes'
+                  AND column_name = 'meshing_params'
+                """
+            )
+        ).fetchone()
+
+        if row:
+            return
+
+        table_exists = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'meshes'
+                """
+            )
+        ).fetchone()
+        if table_exists:
+            conn.execute(text("ALTER TABLE meshes ADD COLUMN meshing_params TEXT"))

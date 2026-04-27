@@ -24,8 +24,13 @@ class TestBooleanUnion:
     def test_union_non_overlapping(self):
         result = boolean_operation(SQUARE_A, SQUARE_OUTSIDE, "union")
         assert result["is_valid"]
-        # MultiPolygon → takes the larger one (both are 16, takes first)
+        # Backward-compatible primary component still exists
         assert result["area"] > 0
+        # New contract returns all disconnected components
+        assert result["is_multipolygon"] is True
+        assert result["component_count"] == 2
+        assert abs(result["total_area"] - 32.0) < 0.01
+        assert len(result["components"]) == 2
 
     def test_union_contained(self):
         result = boolean_operation(SQUARE_A, SQUARE_INSIDE, "union")

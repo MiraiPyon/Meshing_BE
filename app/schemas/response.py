@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 from datetime import datetime
 from app.schemas.request import GeometryType, MeshType
@@ -57,8 +57,25 @@ class MeshResponse(BaseModel):
     dashboard: Optional[dict] = None
     pslg: Optional[dict] = None
     connectivity_matrices: Optional[dict] = None
+    meshing_params: Optional[Dict[str, Any]] = None
     bounds: Bounds
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectSnapshotResponse(BaseModel):
+    """Response project snapshot."""
+
+    id: UUID
+    name: str
+    geometry_id: Optional[UUID] = None
+    mesh_id: Optional[UUID] = None
+    element_type: Optional[str] = None
+    meshing_params: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

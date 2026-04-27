@@ -8,7 +8,7 @@ Supports:
 """
 
 from typing import List, Tuple
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
 from shapely.validation import make_valid
 
 
@@ -76,21 +76,48 @@ def boolean_operation(
     if result.is_empty:
         raise ValueError(f"Boolean {operation} resulted in empty geometry")
 
-    # Handle MultiPolygon — take the largest polygon
-    if isinstance(result, MultiPolygon):
-        result = max(result.geoms, key=lambda g: g.area)
+    polygons: List[Polygon] = []
+    if isinstance(result, Polygon):
+        polygons = [result]
+    elif isinstance(result, MultiPolygon):
+        polygons = list(result.geoms)
+    elif isinstance(result, GeometryCollection):
+        polygons = [geom for geom in result.geoms if isinstance(geom, Polygon)]
 
-    if not isinstance(result, Polygon):
+    if not polygons:
         raise ValueError(
             f"Boolean {operation} produced unsupported geometry type: {type(result).__name__}"
         )
 
-    outer, holes = _polygon_to_coords(result)
+    polygons.sort(key=lambda poly: float(poly.area), reverse=True)
+    components = []
+    total_area = 0.0
+    for poly in polygons:
+        outer, holes = _polygon_to_coords(poly)
+        area = float(poly.area)
+        total_area += area
+        components.append(
+            {
+                "outer_boundary": outer,
+                "holes": holes,
+                "area": area,
+                "num_vertices": len(outer),
+                "is_valid": poly.is_valid,
+            }
+        )
+
+    primary = components[0]
 
     return {
-        "outer_boundary": outer,
-        "holes": holes,
-        "area": float(result.area),
-        "num_vertices": len(outer),
-        "is_valid": result.is_valid,
+        # Backward-compatible fields (primary/largest component)
+        "outer_boundary": primary["outer_boundary"],
+        "holes": primary["holes"],
+        "area": primary["area"],
+        "num_vertices": primary["num_vertices"],
+        "is_valid": all(component["is_valid"] for component in components),
+        # New explicit multi-component contract
+        "components": components,
+        "component_count": len(components),
+        "total_area": total_area,
+        "is_multipolygon": len(components) > 1,
     }

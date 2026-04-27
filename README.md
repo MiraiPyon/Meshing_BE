@@ -1,53 +1,133 @@
 # Meshing_BE
 
-Backend API cho bài toán **tạo lưới (Meshing)** và **phân tích phần tử hữu hạn (FEA)** 2D. Xác thực qua **Google OAuth2 → JWT**.
+Backend API cho nền tảng Web mô phỏng **Meshing 2D đa phương thức** và **Dashboard quản lý chất lượng phần tử hữu hạn**.
+
+Hệ thống hỗ trợ luồng:
+- Khởi tạo hình học từ primitive, boolean CSG, sketch/PSLG, hoặc `shape.dat`
+- Chia lưới `T3` và `Q4`
+- Dashboard realtime với thống kê nút/phần tử, chất lượng lưới và ma trận connectivity
+- Lưu project snapshot và export dữ liệu cho solver bên ngoài
+- Giải FEA 2D với plane stress / plane strain
 
 ---
 
-## Tính năng
+## Tổng Quan
 
-### Auth
-- Đăng nhập qua **Google OAuth2**, trả về **JWT access + refresh tokens**
-- Mỗi user chỉ thấy data của mình (ownership isolation)
+### Geometry Modeling
+- Primitive: `Rectangle`, `Circle`, `Polygon`
+- Boolean CSG: `union`, `subtract`, `intersect`
+- Sketch to PSLG: chuẩn hóa biên ngoài / biên trong, loại điểm trùng, kiểm tra tự cắt
+- `shape.dat`: hỗ trợ `OUTER`, `HOLE`, `END`
 
-### Meshing
-- Tạo hình học: **Rectangle**, **Circle**, **Polygon**
-- Chia lưới **Quad** (structured grid) — chỉ hỗ trợ hình chữ nhật
-- Chia lưới **Tam giác** (Delaunay triangulation) — hỗ trợ mọi hình
+### Meshing Engine
+- `Q4` structured mesh cho hình chữ nhật
+- `T3` Delaunay mesh cho PSLG/phức tạp hơn
+- Refinement theo `min_angle`, `max_area`, `max_edge_length`
+- Kiểm tra chất lượng: `theta_min`, `circumradius / shortest edge`, empty circumcircle
 
-### FEA 2D
-- **Định luật Hooke** — plane stress và plane strain
-- **Shape functions** — tam giác tuyến tính (3 nút) + tứ giác song tuyến tính (4 nút)
-- **Gaussian Quadrature** — 1pt, 3pt, 7pt (tam giác) / 2×2, 3×3 (tứ giác)
-- **Ma trận độ cứng** phần tử → lắp ráp tổng thể K (sparse)
-- **Giải K·u = F** — Dirichlet + Neumann BC (elimination method)
-- **Stress recovery** — ε, σ (σ_xx, σ_yy, τ_xy), σ_von_mises
-- **Benchmark payload** — reaction forces, force-balance check, cantilever analytical ratios
-- **Visualization** — contour plot (PNG) của displacement/stress/von_mises
+### Dashboard & Analysis
+- `node_count`, `element_count`, `dof_total`
+- `mesh_quality` metrics
+- `nodes_matrix`, `edges_matrix`, `tris_matrix`
+- WebSocket realtime cho dashboard
+
+### Project & Export
+- Project snapshot CRUD theo user
+- Export mesh: `json`, `dat`, `csv` legacy, `csv_zip` chuẩn mới, `shape`
+- `csv_zip` chứa cả `nodes.csv` và `elements.csv`
+
+### FEA
+- Plane stress / plane strain
+- Linear elastic 2D
+- Assembly sparse, giải `K·u = F`
+- Stress / strain recovery, Von Mises, benchmark cantilever
 
 ---
 
-## Quick start
+## Tech Stack
+
+- FastAPI
+- PostgreSQL + SQLAlchemy
+- Pydantic v2 / pydantic-settings
+- NumPy, SciPy
+- Shapely
+- WebSocket realtime
+
+---
+
+## API Contracts Quan Trọng
+
+- FEA request dùng `node_id` dạng **0-based**
+- Quad mesh chỉ hỗ trợ **axis-aligned rectangle**, không hỗ trợ holes
+- Boolean CSG có thể trả về **nhiều component**
+- `format=csv` là legacy nodes-only export
+- `format=csv_zip` là format được khuyến nghị cho solver
+- WebSocket dashboard: `/api/ws/dashboard`
+
+### Boolean CSG Response
+
+Khi kết quả boolean rời rạc, backend trả thêm:
+- `components`
+- `component_count`
+- `total_area`
+- `is_multipolygon`
+
+Field cũ vẫn giữ để tương thích ngược:
+- `outer_boundary`
+- `holes`
+- `area`
+- `num_vertices`
+
+---
+
+## Quick Start
+
+### 1. Chuẩn bị môi trường
 
 ```sh
-make install          # Tạo venv + cài dependencies
-make bootstrap-env   # Tạo .env từ env.example
-make hooks           # Bật pre-commit hook (chặn secret leak)
-make up              # Start PostgreSQL (docker compose)
-make run             # Chạy API server
+make install
+make bootstrap-env
+cp docker/.env.example docker/.env
 ```
 
-Sau đó mở: `http://localhost:8000/docs` (Swagger UI)
+`make bootstrap-env` tạo `.env` ở project root từ `env.example`.
+`docker/.env` là file Docker Compose dùng cho `make up`.
 
-### Auth flow (Google OAuth2)
+### 2. Chạy database
+
+```sh
+make up
+```
+
+### 3. Chạy API
+
+```sh
+make run
+```
+
+Mở Swagger UI:
 
 ```txt
-1. GET /api/auth/google/url        → Lấy Google OAuth URL
-2. Redirect user sang URL đó       → User đăng nhập Google
-3. Google redirect về /api/auth/callback?code=xxx
-4. POST /api/auth/callback {code} → Nhận JWT tokens
-5. Gắn Authorization: Bearer <access_token> cho các API protected
-6. Hết hạn → POST /api/auth/refresh {refresh_token} → token mới
+http://localhost:8000/docs
+```
+
+### 4. Dừng dịch vụ
+
+```sh
+make down
+```
+
+---
+
+## Auth Flow
+
+```txt
+1. GET /api/auth/google/url
+2. Đăng nhập Google
+3. Google redirect về /api/auth/callback?code=...
+4. POST /api/auth/callback {code}
+5. Dùng Authorization: Bearer <access_token> cho API protected
+6. Hết hạn thì POST /api/auth/refresh {refresh_token}
 ```
 
 ---
@@ -55,262 +135,231 @@ Sau đó mở: `http://localhost:8000/docs` (Swagger UI)
 ## API Endpoints
 
 ### Public
+
 | Method | Endpoint | Mô tả |
 |--------|----------|--------|
 | GET | `/api/health` | Health check |
-| GET | `/api/health/db` | Database check |
+| GET | `/api/health/db` | Database health check |
 | GET | `/api/auth/google/url` | Lấy Google OAuth URL |
-| POST | `/api/auth/callback` | Đổi Google code → JWT |
-| POST | `/api/auth/refresh` | Refresh token |
+| GET | `/api/auth/callback?code=...` | OAuth callback cho test / không có frontend |
+| POST | `/api/auth/callback` | Đổi Google code lấy JWT |
+| POST | `/api/auth/refresh` | Refresh access token |
 | POST | `/api/auth/logout` | Revoke refresh token |
-| GET | `/api/auth/me` | Thông tin user hiện tại |
+| GET | `/api/auth/me` | User hiện tại |
 
-### Protected (cần `Authorization: Bearer <token>`)
+### Geometry
 
-#### Geometry
 | Method | Endpoint | Mô tả |
 |--------|----------|--------|
-| POST | `/api/geometry/rectangle` | Tạo hình chữ nhật |
-| POST | `/api/geometry/circle` | Tạo hình tròn |
-| POST | `/api/geometry/polygon` | Tạo polygon tự do |
-| POST | `/api/geometry/boolean` | Boolean CSG: union / subtract / intersect |
+| POST | `/api/geometry/rectangle` | Tạo rectangle |
+| POST | `/api/geometry/circle` | Tạo circle |
+| POST | `/api/geometry/polygon` | Tạo polygon |
+| POST | `/api/geometry/boolean` | Boolean CSG |
 | GET | `/api/geometry/{id}` | Lấy geometry |
-| GET | `/api/geometry` | List geometries của user |
+| GET | `/api/geometry` | List geometry của user |
 | DELETE | `/api/geometry/{id}` | Xóa geometry |
 
-#### Mesh
+### Mesh
+
 | Method | Endpoint | Mô tả |
 |--------|----------|--------|
-| POST | `/api/mesh/quad` | Tạo lưới tứ giác |
-| POST | `/api/mesh/delaunay` | Tạo lưới tam giác |
-| POST | `/api/mesh/from-sketch` | One-shot: sketch → geometry + mesh |
+| POST | `/api/mesh/quad` | Tạo Q4 mesh |
+| POST | `/api/mesh/delaunay` | Tạo T3 mesh |
+| POST | `/api/mesh/from-sketch` | Sketch / PSLG → geometry + mesh |
+| POST | `/api/mesh/from-shape-dat` | Tạo mesh từ `shape.dat` |
 | GET | `/api/mesh/{id}` | Lấy mesh |
-| GET | `/api/mesh` | List meshes của user |
-| GET | `/api/mesh/{id}/export?format=json\|dat\|csv` | Export mesh |
+| GET | `/api/mesh` | List mesh của user |
+| GET | `/api/mesh/{id}/export?format=json\|dat\|csv\|csv_zip\|shape` | Export mesh |
 | DELETE | `/api/mesh/{id}` | Xóa mesh |
 
-#### FEA
+### Projects
+
+| Method | Endpoint | Mô tả |
+|--------|----------|--------|
+| POST | `/api/projects` | Tạo project snapshot |
+| GET | `/api/projects` | List project snapshots |
+| GET | `/api/projects/{id}` | Lấy project snapshot |
+| PUT | `/api/projects/{id}` | Cập nhật project snapshot |
+| DELETE | `/api/projects/{id}` | Xóa project snapshot |
+
+### FEA
+
 | Method | Endpoint | Mô tả |
 |--------|----------|--------|
 | POST | `/api/fea/solve` | Giải bài toán FEA |
 
+### Realtime
+
+| Method | Endpoint | Mô tả |
+|--------|----------|--------|
+| WS | `/api/ws/dashboard` | Observer realtime cho mesh events |
+
 ---
 
-## Ví dụ sử dụng
+## Ví Dụ Sử Dụng
 
-### Tạo hình + mesh + giải FEA
+### 1. Rectangle → Quad mesh → FEA
 
 ```bash
-# 1. Login (lấy token)
+# Login
 curl -X POST http://localhost:8000/api/auth/callback \
   -H "Content-Type: application/json" \
-  -d '{"code": "<google_auth_code>"}'
-# → {access_token, refresh_token, expires_in}
+  -d '{"code":"<google_auth_code>"}'
 
-# 2. Tạo geometry (rectangle)
+# Tạo rectangle
 curl -X POST http://localhost:8000/api/geometry/rectangle \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"name":"Beam","x_min":0,"y_min":0,"width":1,"height":0.2}'
 
-# 3. Tạo quad mesh
+# Tạo quad mesh
 curl -X POST http://localhost:8000/api/mesh/quad \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"geometry_id":"<uuid>","nx":10,"ny":4}'
 
-# 4. Giải FEA (cantilever beam)
+# Giải FEA
 curl -X POST http://localhost:8000/api/fea/solve \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "mesh_id": "<uuid>",
-    "material": {"E": 210e9, "nu": 0.3, "thickness": 0.01},
-    "analysis_type": "plane_stress",
-    "boundary_conditions": [
-      {"node_id": 0, "dof": "ux", "value": 0},
-      {"node_id": 0, "dof": "uy", "value": 0}
+    "mesh_id":"<uuid>",
+    "material":{"E":210000000000,"nu":0.3,"thickness":0.01},
+    "analysis_type":"plane_stress",
+    "boundary_conditions":[
+      {"node_id":0,"dof":"ux","value":0},
+      {"node_id":0,"dof":"uy","value":0}
     ],
-    "nodal_forces": [
-      {"node_id": 33, "dof": "fy", "value": -1000}
+    "nodal_forces":[
+      {"node_id":33,"dof":"fy","value":-1000}
     ]
   }'
-# → {displacements, stresses, strains, von_mises, max_displacement, ...}
 ```
+
+### 2. Sketch / shape.dat → Delaunay mesh
+
+```bash
+curl -X POST http://localhost:8000/api/mesh/from-shape-dat \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"plate_with_hole",
+    "shape_dat":"OUTER\n0 0\n5 0\n5 3\n0 3\nEND\nHOLE\n1 1\n2 1\n2 2\n1 2\nEND",
+    "max_area":0.05,
+    "min_angle":20.7,
+    "max_edge_length":0.4
+  }'
+```
+
+### 3. Boolean CSG
+
+```bash
+curl -X POST http://localhost:8000/api/geometry/boolean \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"disjoint_union",
+    "operation":"union",
+    "polygon_a":[[0,0],[1,0],[1,1],[0,1]],
+    "polygon_b":[[3,0],[4,0],[4,1],[3,1]]
+  }'
+```
+
+Kết quả boolean rời rạc sẽ có `components` để frontend chọn component cần meshing.
 
 ---
 
-## Benchmark: Section IV (editor_in_chief)
+## Environment Variables
 
-Repo có benchmark kiểm chứng cantilever theo bài báo **Oladejo et al. (2018)**,
-`docs/editor_in_chief.txt` (Section IV/V), dùng đúng bộ tham số:
-
-| Tham số | Giá trị |
-|---------|---------|
-| Tải trọng `P` | 10 kN (10 000 N) |
-| Chiều cao `h` | 1.0 m |
-| Chiều dài `L` | 10 m |
-| Hệ số Poisson `ν` | 0.3 |
-| Mô đun Young `E` | 2×10¹¹ N/m² |
-| Bề dày `t` | 1.0 m (unit width) |
-
-**Nghiệm giải tích Euler-Bernoulli** (Eq. 2 trong bài báo):
-
-```
-δ_max = PL³ / (3EI)  với  I = t·h³/12 = 0.0833 m⁴
-      = (10000 × 10³) / (3 × 2e11 × 0.0833)
-      = 2.00 × 10⁻⁴ m  ≈ 0.20 mm
-```
-
-### Kết quả so sánh (Q4 bilinear, plane stress)
-
-| Lưới | nx × ny | Tip deflection FEA | Exact | Sai số |
-|------|---------|-------------------|-------|--------|
-| Coarse | 4 × 2 | −5.85 × 10⁻⁵ m | −2.00 × 10⁻⁴ m | 70.8% |
-| Fine | 10 × 2 | −1.42 × 10⁻⁴ m | −2.00 × 10⁻⁴ m | 28.9% |
-
-> **Nhận xét**: Kết quả định tính **phù hợp với Section V của bài báo** —
-> lưới fine cho kết quả gần nghiệm chính xác hơn lưới coarse.
-> Sai số tuyệt đối lớn hơn trong bài báo gốc vì bài báo dùng **LST (6-nút tam giác)**
-> trong khi code này dùng **Q4 (4-nút tứ giác bilinear)** — phần tử Q4 gặp hiện tượng
-> **shear locking** khi tỉ lệ h/L nhỏ, làm giảm độ võng tính toán. Xu hướng hội tụ
-> khi tăng số phần tử là đúng với lý thuyết FEM.
-
-Benchmark test nằm trong `tests/test_fea_cantilever_analytical.py`, gồm so sánh lưới coarse/fine với nghiệm Euler-Bernoulli tại đầu tự do.
-
-Chạy benchmark:
+### Root `.env`
 
 ```sh
-make test-fea
-# hoặc
-.venv/bin/python -m pytest -q tests/test_fea_cantilever_analytical.py
-```
-
----
-
-## Cấu trúc project
-
-```
-Meshing_BE/
-├── app/
-│   ├── api/
-│   │   ├── auth.py          # Auth endpoints (OAuth2 → JWT)
-│   │   └── endpoints.py     # Geometry / Mesh / FEA endpoints
-│   ├── core/
-│   │   ├── config.py        # Settings (pydantic-settings)
-│   │   └── deps.py          # JWT dependency (get_current_user)
-│   ├── database/
-│   │   ├── models.py        # User, RefreshToken, Geometry, Mesh
-│   │   └── session.py       # SQLAlchemy engine + session
-│   ├── engines/
-│   │   ├── base.py          # MeshEngine interface
-│   │   ├── quad_engine.py   # Quad mesh generator
-│   │   ├── delaunay_engine.py
-│   │   └── fea/             # FEA core modules
-│   │       ├── shape_functions.py
-│   │       ├── gaussian_quadrature.py
-│   │       ├── material.py          # Hooke 2D (plane stress/strain)
-│   │       ├── stiffness.py         # Element K matrices
-│   │       ├── assembly.py          # Global K assembly + BC
-│   │       ├── solver.py            # Solve K·u=F
-│   │       ├── stress_recovery.py   # ε, σ, σ_vm
-│   │       └── visualization.py     # Contour plots (PNG)
-│   ├── schemas/
-│   │   ├── auth.py          # Login/token/refresh schemas
-│   │   ├── request.py       # Geometry/mesh request models
-│   │   ├── response.py      # Response models
-│   │   ├── fea_request.py   # FEA solve request
-│   │   └── fea_response.py   # FEA result response
-│   └── services/
-│       ├── auth_service.py   # JWT + Google OAuth logic
-│       ├── mesh_service.py   # Geometry/mesh CRUD
-│       └── fea_service.py   # FEA solve workflow
-├── docker/
-│   └── docker-compose.yml     # PostgreSQL + PGAdmin
-├── scripts/
-│   ├── bootstrap-env.sh      # Tạo .env từ env.example
-│   └── precommit-secret-scan.sh
-├── tests/
-│   ├── test_fea_core.py                      # Shape, material, stiffness, assembly, cantilever
-│   ├── test_fea_cantilever_analytical.py      # Section IV benchmark (Oladejo 2018)
-│   ├── test_fea_assembly_solver_cases.py      # BC elimination/penalty, reaction recovery
-│   ├── test_fea_convergence.py                # Q4 mesh convergence trend
-│   ├── test_fea_global_stiffness_properties.py # K symmetry, PD, rigid-body modes
-│   ├── test_fea_linear_system_properties.py   # Linearity, superposition, ordering invariance
-│   ├── test_fea_material_stiffness.py         # Hooke 2D, Von Mises, presets, K-elem
-│   ├── test_fea_patch_tests.py                # T3/Q4 patch tests (linear field exactness)
-│   ├── test_fea_randomized_invariants.py      # Randomized elimination vs penalty consistency
-│   ├── test_fea_shape_quadrature.py           # Shape functions, Gauss rules, B-matrix
-│   ├── test_fea_solver_edge_cases.py          # Edge cases (all DOF prescribed, invalid DOF)
-│   ├── test_fea_stress_recovery.py            # ε, σ, σ_vm recovery for T3 and Q4
-│   ├── test_fea_u_validation.py               # Non-zero Dirichlet BC partition correctness
-│   └── test_health.py                         # API health/DB endpoints
-│   # Total: 58 tests — all passing
-├── .githooks/               # Pre-commit hooks
-├── env.example              # Template biến môi trường
-├── requirements.txt
-├── requirements-dev.txt
-└── Makefile
-```
-
----
-
-## Developer commands
-
-```sh
-make test          # Run test suite
-make test-fea      # Run focused FEA test suite
-make test-fea-stress # Repeat focused FEA suite 5x (stability burn-in)
-make test-stress   # Repeat full suite 5x (broader stability burn-in)
-make lint          # Ruff lint checks
-make format        # Black formatter
-make check        # Lint + tests
-make secret-scan  # Scan staged changes cho secrets
-make ci           # secret-scan + lint + tests
-make up           # Start compose services
-make down         # Stop compose services
-```
-
----
-
-## Environment variables
-
-```sh
-# Database
-POSTGRES_URL=postgresql://admin:password@db:5432/meshing_db
+POSTGRES_URL=postgresql://admin:change-this-password@db:5432/meshing_db
 DB_USER=admin
 DB_PASS=change-this-password
 DB_NAME=meshing_db
 DB_PORT=5432
 DB_HOST=db
 
-# App
 APP_NAME=FEA 2D Meshing API
 DEBUG=true
 
-# JWT
-JWT_SECRET=<auto-generated-nếu-không-đặt>
-
-# Google OAuth2 (lấy từ Google Cloud Console)
-GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=xxx
-GOOGLE_REDIRECT_URI=http://localhost:5173/auth/callback
+JWT_SECRET=replace-with-your-jwt-secret
+GOOGLE_CLIENT_ID=replace-with-your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=replace-with-your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback
 ```
 
----
-
-## Git secret guard
-
-Pre-commit hook chặn commit chứa:
-- File `.env`
-- Các dòng staged có dạng secret (`SECRET=`, `PASSWORD=`, `API_KEY=`, `TOKEN=`, ...)
+### Docker `docker/.env`
 
 ```sh
-make hooks
+DB_USER=admin
+DB_PASS=change-this-password
+DB_NAME=meshing_db
+DB_PORT=5432
+DB_HOST=localhost
+POSTGRES_URL=postgresql+psycopg://admin:change-this-password@localhost:5432/meshing_db
+PGADMIN_EMAIL=admin@meshing.local
+PGADMIN_PASS=change-this-password
 ```
 
 ---
 
-## License
+## Useful Commands
 
-MIT
+| Command | Mô tả |
+|--------|-------|
+| `make test` | Chạy toàn bộ test |
+| `make test-fea` | Chạy nhóm test FEA |
+| `make test-fea-stress` | Chạy nhóm FEA 5 lần |
+| `make test-stress` | Chạy toàn bộ test 5 lần |
+| `make lint` | Ruff lint |
+| `make format` | Black format |
+| `make check` | Lint + test |
+| `make secret-scan` | Quét secret trong staged changes |
+| `make ci` | Secret scan + lint + test |
+| `make hooks` | Bật git hooks |
+| `make up` | Start PostgreSQL / PGAdmin |
+| `make down` | Stop Docker services |
+| `make run` | Chạy API server |
+| `make run-alt` | Chạy API server ở port 8001 |
+
+---
+
+## Validation
+
+Các mục dưới đây đã được kiểm tra trong repo hiện tại:
+- Full regression suite
+- Ruff lint
+- Benchmark 10k phần tử Q4 bằng test opt-in
+
+Chạy benchmark:
+
+```sh
+RUN_PERFORMANCE_BENCHMARK=1 .venv/bin/python -m pytest -q tests/test_performance_benchmark.py
+```
+
+Có thể override ngưỡng bằng:
+
+```sh
+PERF_NX=100 PERF_NY=100 PERF_MAX_MESH_S=2.0 PERF_MAX_ASSEMBLE_S=10.0 PERF_MAX_SOLVE_S=5.0 PERF_MAX_TOTAL_S=20.0
+```
+
+---
+
+## Project Structure
+
+```text
+Meshing_BE/
+├── app/
+│   ├── api/           # REST API + WebSocket
+│   ├── core/          # Settings + dependencies
+│   ├── database/      # SQLAlchemy models/session
+│   ├── engines/       # Geometry, meshing, FEA engines
+│   ├── schemas/       # Pydantic request/response models
+│   └── services/      # Business logic
+├── docker/            # Docker Compose + env example
+├── scripts/           # Bootstrap + secret scan scripts
+├── tests/             # Regression + benchmark tests
+└── Makefile
+```

@@ -12,7 +12,11 @@ Point = Tuple[float, float]
 
 
 class DelaunayMeshEngine(MeshEngine):
-    """Delaunay meshing engine with PSLG-aware filtering and refinement."""
+    """Delaunay meshing engine with PSLG-aware filtering and refinement.
+
+    Official backend implementation uses SciPy/Qhull triangulation plus
+    constrained-domain filtering and refinement rules from system specs.
+    """
 
     def generate(
         self,
@@ -25,7 +29,7 @@ class DelaunayMeshEngine(MeshEngine):
         min_angle = kwargs.get("min_angle")
         max_edge_length = kwargs.get("max_edge_length")
         max_refine_iterations = kwargs.get("max_refine_iterations", 25)
-        
+
         pslg = build_pslg(points, holes=holes or [])
         return self.generate_from_pslg(
             pslg=pslg,
@@ -495,6 +499,5 @@ class DelaunayMeshEngine(MeshEngine):
     @staticmethod
     def _cross2d(u: np.ndarray, v: np.ndarray) -> float:
         return float(u[0] * v[1] - u[1] * v[0])
-
 
 

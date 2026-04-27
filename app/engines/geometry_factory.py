@@ -58,7 +58,7 @@ class GeometryFactory:
         outer = pslg["outer_boundary"]
         x_coords = [p[0] for p in outer]
         y_coords = [p[1] for p in outer]
-        
+
         return GeometryModel(
             user_id=user_id,
             name=data.name,

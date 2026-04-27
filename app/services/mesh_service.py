@@ -2,8 +2,10 @@
 Mesh Service — CRUD cho Geometry và Mesh, mỗi user chỉ thấy data của mình.
 """
 
+import io
 import json
 import math
+import zipfile
 from typing import Any, List, Optional, Sequence, Tuple
 from uuid import UUID
 
@@ -129,6 +131,14 @@ class MeshService:
             element_count=len(elements),
             nodes=json.dumps(nodes),
             elements=json.dumps(elements),
+            meshing_params=json.dumps(
+                {
+                    "strategy": "quad",
+                    "element_type": "Q4",
+                    "nx": data.nx,
+                    "ny": data.ny,
+                }
+            ),
         )
 
         db.add(mesh)
@@ -173,6 +183,15 @@ class MeshService:
             element_count=len(elements),
             nodes=json.dumps(nodes),
             elements=json.dumps(elements),
+            meshing_params=json.dumps(
+                {
+                    "strategy": "delaunay",
+                    "element_type": "T3",
+                    "max_area": data.max_area,
+                    "min_angle": data.min_angle,
+                    "max_edge_length": data.max_edge_length,
+                }
+            ),
         )
 
         db.add(mesh)
@@ -251,7 +270,7 @@ class MeshService:
         )
 
     def export_mesh(self, db: Session, mesh_id: UUID, user_id: UUID, fmt: str) -> dict:
-        """Export mesh sang json/dat/csv."""
+        """Export mesh sang json/dat/csv/csv_zip."""
         mesh = db.query(MeshModel).join(GeometryModel).filter(
             MeshModel.id == mesh_id,
             GeometryModel.user_id == user_id,
@@ -280,6 +299,10 @@ class MeshService:
                     "dof_total": analysis["dof_total"],
                     "dashboard": analysis["dashboard"],
                     "connectivity_matrices": analysis["connectivity_matrices"],
+                    "meshing_params": (
+                        json.loads(mesh.meshing_params)
+                        if mesh.meshing_params else None
+                    ),
                 },
             }
 
@@ -316,7 +339,33 @@ class MeshService:
                 "format": "csv",
                 "content_type": "text/csv",
                 "filename": f"{mesh.name}_nodes.csv",
+                "deprecation": "format=csv is legacy nodes-only export; use format=csv_zip",
                 "data": {"nodes": "\n".join(node_lines), "elements": "\n".join(elem_lines)},
+            }
+
+        if fmt == "csv_zip":
+            node_lines = ["id,x,y"]
+            for i, (x, y) in enumerate(nodes, 1):
+                node_lines.append(f"{i},{x},{y}")
+
+            elem_lines = [
+                "id," + ",".join(f"n{j+1}" for j in range(len(elements_one_based[0])))
+                if elements_one_based
+                else "id"
+            ]
+            for i, elem in enumerate(elements_one_based, 1):
+                elem_lines.append(f"{i}," + ",".join(str(n) for n in elem))
+
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("nodes.csv", "\n".join(node_lines))
+                archive.writestr("elements.csv", "\n".join(elem_lines))
+
+            return {
+                "format": "csv_zip",
+                "content_type": "application/zip",
+                "filename": f"{mesh.name}_csv.zip",
+                "data": buffer.getvalue(),
             }
 
         if fmt == "shape":
@@ -334,7 +383,7 @@ class MeshService:
                 "data": shape_txt,
             }
 
-        raise ValueError(f"Unknown format: {fmt}. Supported: json, dat, csv, shape")
+        raise ValueError(f"Unknown format: {fmt}. Supported: json, dat, csv, csv_zip, shape")
 
     # ============== Helper Methods ==============
 
@@ -383,6 +432,7 @@ class MeshService:
             dashboard=analysis["dashboard"],
             pslg=pslg,
             connectivity_matrices=analysis["connectivity_matrices"],
+            meshing_params=json.loads(mesh.meshing_params) if mesh.meshing_params else None,
             bounds=bounds, created_at=mesh.created_at,
         )
 
@@ -403,6 +453,13 @@ class MeshService:
         pslg = build_pslg(outer_boundary=outer, holes=holes)
         outer_norm = [tuple(p) for p in pslg["outer_boundary"]]
         holes_norm = [[tuple(p) for p in loop] for loop in pslg.get("holes", [])]
+        strategy = element_type.strip().lower()
+
+        if strategy == "quad":
+            if holes_norm:
+                raise ValueError("Quad mesh from sketch only supports a single outer rectangle (no holes)")
+            if not self._is_axis_aligned_rectangle(outer_norm):
+                raise ValueError("Quad mesh from sketch requires an axis-aligned rectangular outer boundary")
 
         xs = [p[0] for p in outer_norm]
         ys = [p[1] for p in outer_norm]
@@ -422,8 +479,8 @@ class MeshService:
         db.commit()
         db.refresh(geometry)
 
-        engine = MeshEngineFactory.create(element_type)
-        
+        engine = MeshEngineFactory.create(strategy)
+
         nodes, elements = engine.generate(
             points=outer_norm,
             holes=holes_norm,
@@ -434,8 +491,8 @@ class MeshService:
             nx=nx,
             ny=ny,
         )
-        
-        if element_type.strip().lower() == "quad":
+
+        if strategy == "quad":
             mesh_type = MeshTypeEnum.QUAD
             mesh_name = f"{name}_quad_{nx}x{ny}"
         else:
@@ -450,15 +507,52 @@ class MeshService:
             element_count=len(elements),
             nodes=json.dumps(nodes),
             elements=json.dumps(elements),
+            meshing_params=json.dumps(
+                {
+                    "strategy": strategy,
+                    "element_type": "Q4" if strategy == "quad" else "T3",
+                    "nx": nx if strategy == "quad" else None,
+                    "ny": ny if strategy == "quad" else None,
+                    "max_area": max_area if strategy != "quad" else None,
+                    "min_angle": min_angle if strategy != "quad" else None,
+                    "max_edge_length": max_edge_length if strategy != "quad" else None,
+                    "outer_vertices": len(outer_norm),
+                    "hole_count": len(holes_norm),
+                }
+            ),
         )
         db.add(mesh)
         db.commit()
         db.refresh(mesh)
 
         # Publish Mesh Created Event
-        mesh_events.notify_sync("mesh_created", {"mesh_id": str(mesh.id), "name": mesh.name, "type": element_type})
+        mesh_events.notify_sync("mesh_created", {"mesh_id": str(mesh.id), "name": mesh.name, "type": strategy})
 
         return self._mesh_to_response(db, mesh)
+
+    @staticmethod
+    def _is_axis_aligned_rectangle(points: Sequence[Tuple[float, float]], tol: float = 1e-9) -> bool:
+        if len(points) != 4:
+            return False
+
+        xs = sorted({round(float(p[0]) / tol) for p in points})
+        ys = sorted({round(float(p[1]) / tol) for p in points})
+        if len(xs) != 2 or len(ys) != 2:
+            return False
+
+        x_values = sorted({float(p[0]) for p in points})
+        y_values = sorted({float(p[1]) for p in points})
+        if len(x_values) != 2 or len(y_values) != 2:
+            return False
+
+        expected = {
+            (x_values[0], y_values[0]),
+            (x_values[0], y_values[1]),
+            (x_values[1], y_values[0]),
+            (x_values[1], y_values[1]),
+        }
+        actual = {(float(p[0]), float(p[1])) for p in points}
+        return actual == expected
 
     def _geometry_to_pslg(self, geometry: Optional[GeometryModel]) -> Optional[dict]:
         if geometry is None:
@@ -769,7 +863,7 @@ class MeshService:
             length = float(np.linalg.norm(p2 - p1))
             midpoint_x = float(0.5 * (p1[0] + p2[0]))
             midpoint_y = float(0.5 * (p1[1] + p2[1]))
-            
+
             if length > 0:
                 normal_x = float((p2[1] - p1[1]) / length)
                 normal_y = float(-(p2[0] - p1[0]) / length)

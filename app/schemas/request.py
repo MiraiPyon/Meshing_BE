@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from pydantic import field_validator, model_validator
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 from enum import Enum
 
@@ -140,3 +140,38 @@ class BooleanOperationRequest(BaseModel):
             raise ValueError("operation must be one of: union, subtract, intersect")
         return op
 
+
+# ============== Project Snapshot Requests ==============
+
+class ProjectCreate(BaseModel):
+    """Create project snapshot."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    geometry_id: Optional[UUID] = None
+    mesh_id: Optional[UUID] = None
+    element_type: Optional[str] = Field(
+        default=None,
+        description="Element type tag, e.g. T3 or Q4",
+    )
+    meshing_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Persisted meshing params for project restore",
+    )
+    notes: Optional[str] = Field(default=None, max_length=5000)
+
+
+class ProjectUpdate(BaseModel):
+    """Update project snapshot (partial update)."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    geometry_id: Optional[UUID] = None
+    mesh_id: Optional[UUID] = None
+    element_type: Optional[str] = Field(
+        default=None,
+        description="Element type tag, e.g. T3 or Q4",
+    )
+    meshing_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Persisted meshing params for project restore",
+    )
+    notes: Optional[str] = Field(default=None, max_length=5000)

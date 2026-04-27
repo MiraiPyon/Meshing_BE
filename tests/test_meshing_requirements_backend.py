@@ -148,3 +148,67 @@ def test_strategy_pattern_uniform_generation():
 
     assert len(nodes_q) > 0 and len(elements_q) > 0
     assert len(nodes_d) > 0 and len(elements_d) > 0
+
+
+def test_delaunay_stability_for_wrench_like_polygon_with_holes():
+    engine = DelaunayMeshEngine()
+    outer = [
+        (0.0, 0.0),
+        (8.0, 0.0),
+        (8.0, 5.0),
+        (5.0, 5.0),
+        (5.0, 2.5),
+        (3.0, 2.5),
+        (3.0, 5.0),
+        (0.0, 5.0),
+    ]
+    holes = [
+        [(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 2.0)],
+        [(6.0, 2.0), (7.0, 2.0), (7.0, 4.0), (6.0, 4.0)],
+    ]
+
+    pslg = build_pslg(outer_boundary=outer, holes=holes)
+    nodes, elements = engine.generate_from_pslg(
+        pslg=pslg,
+        resolution=25,
+        min_angle=20.7,
+        max_edge_length=0.6,
+        max_refine_iterations=30,
+    )
+
+    assert len(nodes) > 0
+    assert len(elements) > 0
+    one_based = [[idx + 1 for idx in tri] for tri in elements]
+    assert engine.check_empty_circumcircle(nodes=nodes, elements=one_based)
+
+
+def test_quad_sketch_guardrail_rejects_holes_and_non_rectangles():
+    with pytest.raises(ValueError, match="no holes"):
+        mesh_service._create_mesh_from_loops(
+            db=None,  # not used because validation fails before DB operations
+            user_id=None,
+            name="invalid_quad_hole",
+            outer=[(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)],
+            holes=[[(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 2.0)]],
+            element_type="quad",
+            max_area=None,
+            min_angle=20.7,
+            max_edge_length=None,
+            nx=4,
+            ny=3,
+        )
+
+    with pytest.raises(ValueError, match="axis-aligned rectangular"):
+        mesh_service._create_mesh_from_loops(
+            db=None,  # not used because validation fails before DB operations
+            user_id=None,
+            name="invalid_quad_shape",
+            outer=[(0.0, 0.0), (4.0, 0.0), (3.0, 2.0), (0.0, 3.0)],
+            holes=[],
+            element_type="quad",
+            max_area=None,
+            min_angle=20.7,
+            max_edge_length=None,
+            nx=4,
+            ny=3,
+        )

@@ -10,3 +10,8 @@ exclude = [".venv", "build", "dist"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "B"]
 ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+markers = [
+  "performance: long-running benchmark tests (opt-in via env)",
+]
