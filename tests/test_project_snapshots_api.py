@@ -42,18 +42,21 @@ def api_client():
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
 
-    with TestClient(app) as client:
+    client = TestClient(app)
+    try:
         yield client, set_user
+    finally:
+        client.close()
 
-    if previous_db_override is not None:
-        app.dependency_overrides[get_db] = previous_db_override
-    else:
-        app.dependency_overrides.pop(get_db, None)
+        if previous_db_override is not None:
+            app.dependency_overrides[get_db] = previous_db_override
+        else:
+            app.dependency_overrides.pop(get_db, None)
 
-    if previous_user_override is not None:
-        app.dependency_overrides[get_current_user] = previous_user_override
-    else:
-        app.dependency_overrides.pop(get_current_user, None)
+        if previous_user_override is not None:
+            app.dependency_overrides[get_current_user] = previous_user_override
+        else:
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 def _auth_headers():
