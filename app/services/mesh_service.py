@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.schemas.request import (
     RectangleCreate,
     CircleCreate,
+    TriangleCreate,
     PolygonCreate,
     QuadMeshCreate,
     DelaunayMeshCreate,
@@ -52,6 +53,14 @@ class MeshService:
         return self._geometry_to_response(geometry)
 
     def create_circle(self, db: Session, data: CircleCreate, user_id: UUID) -> GeometryResponse:
+        geometry = GeometryFactory.create_geometry(data, user_id)
+
+        db.add(geometry)
+        db.commit()
+        db.refresh(geometry)
+        return self._geometry_to_response(geometry)
+
+    def create_triangle(self, db: Session, data: TriangleCreate, user_id: UUID) -> GeometryResponse:
         geometry = GeometryFactory.create_geometry(data, user_id)
 
         db.add(geometry)
@@ -173,6 +182,7 @@ class MeshService:
             max_area=data.max_area,
             min_angle=data.min_angle,
             max_edge_length=data.max_edge_length,
+            max_circumradius_ratio=data.max_circumradius_ratio,
         )
 
         mesh = MeshModel(
@@ -190,6 +200,7 @@ class MeshService:
                     "max_area": data.max_area,
                     "min_angle": data.min_angle,
                     "max_edge_length": data.max_edge_length,
+                    "max_circumradius_ratio": data.max_circumradius_ratio,
                 }
             ),
         )
@@ -243,6 +254,7 @@ class MeshService:
             max_area=data.max_area,
             min_angle=data.min_angle,
             max_edge_length=data.max_edge_length,
+            max_circumradius_ratio=data.max_circumradius_ratio,
             nx=data.nx,
             ny=data.ny,
         )
@@ -265,6 +277,7 @@ class MeshService:
             max_area=data.max_area,
             min_angle=data.min_angle,
             max_edge_length=data.max_edge_length,
+            max_circumradius_ratio=data.max_circumradius_ratio,
             nx=10,
             ny=10,
         )
@@ -325,22 +338,21 @@ class MeshService:
             }
 
         if fmt == "csv":
-            node_lines = ["id,x,y"]
-            for i, (x, y) in enumerate(nodes, 1):
-                node_lines.append(f"{i},{x},{y}")
-            elem_lines = [
-                "id," + ",".join(f"n{j+1}" for j in range(len(elements_one_based[0])))
-                if elements_one_based
-                else "id"
+            max_nodes_per_element = max((len(elem) for elem in elements_one_based), default=0)
+            headers = ["section", "id", "x", "y"] + [
+                f"n{idx + 1}" for idx in range(max_nodes_per_element)
             ]
+            lines = [",".join(headers)]
+            for i, (x, y) in enumerate(nodes, 1):
+                lines.append(",".join(["node", str(i), str(x), str(y)] + [""] * max_nodes_per_element))
             for i, elem in enumerate(elements_one_based, 1):
-                elem_lines.append(f"{i}," + ",".join(str(n) for n in elem))
+                padded = [str(n) for n in elem] + [""] * (max_nodes_per_element - len(elem))
+                lines.append(",".join(["element", str(i), "", ""] + padded))
             return {
                 "format": "csv",
                 "content_type": "text/csv",
-                "filename": f"{mesh.name}_nodes.csv",
-                "deprecation": "format=csv is legacy nodes-only export; use format=csv_zip",
-                "data": {"nodes": "\n".join(node_lines), "elements": "\n".join(elem_lines)},
+                "filename": f"{mesh.name}.csv",
+                "data": "\n".join(lines),
             }
 
         if fmt == "csv_zip":
@@ -447,6 +459,7 @@ class MeshService:
         max_area: Optional[float],
         min_angle: Optional[float],
         max_edge_length: Optional[float],
+        max_circumradius_ratio: Optional[float],
         nx: int,
         ny: int,
     ) -> MeshResponse:
@@ -488,6 +501,7 @@ class MeshService:
             max_area=max_area,
             min_angle=min_angle,
             max_edge_length=max_edge_length,
+            max_circumradius_ratio=max_circumradius_ratio,
             nx=nx,
             ny=ny,
         )
@@ -516,6 +530,7 @@ class MeshService:
                     "max_area": max_area if strategy != "quad" else None,
                     "min_angle": min_angle if strategy != "quad" else None,
                     "max_edge_length": max_edge_length if strategy != "quad" else None,
+                    "max_circumradius_ratio": max_circumradius_ratio if strategy != "quad" else None,
                     "outer_vertices": len(outer_norm),
                     "hole_count": len(holes_norm),
                 }
@@ -576,7 +591,7 @@ class MeshService:
             )
             return build_pslg(outer_boundary=outer, holes=[])
 
-        if geometry.geometry_type == GeometryTypeEnum.POLYGON:
+        if geometry.geometry_type in {GeometryTypeEnum.TRIANGLE, GeometryTypeEnum.POLYGON}:
             payload = json.loads(geometry.points) if geometry.points else []
             if isinstance(payload, dict):
                 outer = [tuple(p) for p in payload.get("outer", [])]
@@ -857,6 +872,7 @@ class MeshService:
             tri_left = tri_refs[0] if tri_refs else 0
             tri_right = tri_refs[1] if len(tri_refs) > 1 else 0
             is_boundary = 1 if len(tri_refs) == 1 else 0
+            is_internal = 1 if len(tri_refs) > 1 else 0
 
             p1 = nodes[n_start - 1]
             p2 = nodes[n_end - 1]
@@ -864,26 +880,18 @@ class MeshService:
             midpoint_x = float(0.5 * (p1[0] + p2[0]))
             midpoint_y = float(0.5 * (p1[1] + p2[1]))
 
-            if length > 0:
-                normal_x = float((p2[1] - p1[1]) / length)
-                normal_y = float(-(p2[0] - p1[0]) / length)
-            else:
-                normal_x = 0.0
-                normal_y = 0.0
-
             edges_matrix.append(
                 [
                     edge_id,
                     n_start,
                     n_end,
                     is_boundary,
+                    is_internal,
                     tri_left,
                     tri_right,
                     length,
                     midpoint_x,
                     midpoint_y,
-                    normal_x,
-                    normal_y,
                 ]
             )
 

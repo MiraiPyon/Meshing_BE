@@ -2,9 +2,10 @@ import math
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
-from scipy.spatial import Delaunay, cKDTree
+from scipy.spatial import cKDTree
 
 from app.engines.base import MeshEngine
+from app.engines.build_delaunay import BuildDelaunay
 from app.engines.pslg import EPSILON, build_pslg, point_in_domain
 
 
@@ -14,8 +15,9 @@ Point = Tuple[float, float]
 class DelaunayMeshEngine(MeshEngine):
     """Delaunay meshing engine with PSLG-aware filtering and refinement.
 
-    Official backend implementation uses SciPy/Qhull triangulation plus
-    constrained-domain filtering and refinement rules from system specs.
+    Official backend implementation uses the native BuildDelaunay/InCircle
+    triangulation path plus constrained-domain filtering and refinement rules
+    from the system specs.
     """
 
     def generate(
@@ -28,6 +30,7 @@ class DelaunayMeshEngine(MeshEngine):
         max_area = kwargs.get("max_area")
         min_angle = kwargs.get("min_angle")
         max_edge_length = kwargs.get("max_edge_length")
+        max_circumradius_ratio = kwargs.get("max_circumradius_ratio", math.sqrt(2.0))
         max_refine_iterations = kwargs.get("max_refine_iterations", 25)
 
         pslg = build_pslg(points, holes=holes or [])
@@ -37,6 +40,7 @@ class DelaunayMeshEngine(MeshEngine):
             max_area=max_area,
             min_angle=min_angle,
             max_edge_length=max_edge_length,
+            max_circumradius_ratio=max_circumradius_ratio,
             max_refine_iterations=max_refine_iterations,
         )
 
@@ -81,9 +85,9 @@ class DelaunayMeshEngine(MeshEngine):
             if len(points) < 3:
                 break
 
-            triangulation = Delaunay(points, qhull_options="Qbb Qc Qz Q12")
+            simplices = BuildDelaunay.triangulate(points)
             triangles = self._filter_triangles_in_domain(
-                simplices=triangulation.simplices,
+                simplices=np.asarray(simplices, dtype=int),
                 points=points,
                 outer=outer,
                 holes=holes,
@@ -147,9 +151,9 @@ class DelaunayMeshEngine(MeshEngine):
         if len(points) < 3:
             return points.tolist(), []
 
-        final_tri = Delaunay(points, qhull_options="Qbb Qc Qz Q12")
+        final_triangles = BuildDelaunay.triangulate(points)
         final_elements = self._filter_triangles_in_domain(
-            simplices=final_tri.simplices,
+            simplices=np.asarray(final_triangles, dtype=int),
             points=points,
             outer=outer,
             holes=holes,
@@ -246,7 +250,16 @@ class DelaunayMeshEngine(MeshEngine):
         span_y = max(y_max - y_min, EPSILON)
         diag = math.hypot(span_x, span_y)
 
-        spacing = diag / max(2 * resolution, 6)
+        resolution_spacing = diag / max(2 * resolution, 6)
+        is_canvas_scale = diag > 20.0
+
+        if is_canvas_scale and max_edge_length is not None and max_edge_length > resolution_spacing:
+            spacing = max_edge_length
+        elif max_area is not None:
+            spacing = max(math.sqrt(max_area), diag / 300.0)
+        else:
+            spacing = resolution_spacing
+
         if max_area is not None:
             spacing = min(spacing, max(math.sqrt(max_area), diag / 300.0))
         if max_edge_length is not None:
@@ -499,5 +512,3 @@ class DelaunayMeshEngine(MeshEngine):
     @staticmethod
     def _cross2d(u: np.ndarray, v: np.ndarray) -> float:
         return float(u[0] * v[1] - u[1] * v[0])
-
-

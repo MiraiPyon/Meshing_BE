@@ -2,6 +2,7 @@ import os
 import secrets
 from pathlib import Path
 from sqlalchemy.engine.url import make_url
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import PydanticBaseSettingsSource
 from pydantic_settings import SettingsConfigDict
@@ -79,6 +80,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback"
+
+    @field_validator("JWT_SECRET", mode="after")
+    @classmethod
+    def _ensure_jwt_secret(cls, value: str) -> str:
+        return value.strip() or secrets.token_urlsafe(64)
 
     @property
     def database_url(self) -> str:

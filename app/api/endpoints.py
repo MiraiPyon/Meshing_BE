@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.core.deps import get_current_user
 from app.schemas.request import (
-    RectangleCreate, CircleCreate, PolygonCreate,
+    RectangleCreate, CircleCreate, TriangleCreate, PolygonCreate,
     QuadMeshCreate, DelaunayMeshCreate, MeshFromSketchCreate,
     ShapeDatMeshCreate,
     BooleanOperationRequest,
@@ -78,6 +78,11 @@ def create_rectangle(data: RectangleCreate, db: Session = Depends(get_db), user=
 @router.post("/geometry/circle", response_model=GeometryResponse, status_code=status.HTTP_201_CREATED, tags=["geometry"])
 def create_circle(data: CircleCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     return mesh_service.create_circle(db, data, user.id)
+
+
+@router.post("/geometry/triangle", response_model=GeometryResponse, status_code=status.HTTP_201_CREATED, tags=["geometry"])
+def create_triangle(data: TriangleCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return mesh_service.create_triangle(db, data, user.id)
 
 
 @router.post("/geometry/polygon", response_model=GeometryResponse, status_code=status.HTTP_201_CREATED, tags=["geometry"])
@@ -204,17 +209,10 @@ def export_mesh(
             headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
         )
     if result["format"] == "csv":
-        # Return nodes CSV (elements available in result["data"]["elements"])
         return PlainTextResponse(
-            content=result["data"]["nodes"],
+            content=result["data"],
             media_type="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="{result["filename"]}"',
-                "X-Export-Deprecation": result.get(
-                    "deprecation",
-                    "format=csv is legacy nodes-only export; use format=csv_zip",
-                ),
-            },
+            headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
         )
     if result["format"] == "csv_zip":
         return Response(

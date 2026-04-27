@@ -14,15 +14,16 @@ Hệ thống hỗ trợ luồng:
 ## Tổng Quan
 
 ### Geometry Modeling
-- Primitive: `Rectangle`, `Circle`, `Polygon`
+- Primitive: `Rectangle`, `Circle`, `Triangle`, `Polygon`
 - Boolean CSG: `union`, `subtract`, `intersect`
 - Sketch to PSLG: chuẩn hóa biên ngoài / biên trong, loại điểm trùng, kiểm tra tự cắt
 - `shape.dat`: hỗ trợ `OUTER`, `HOLE`, `END`
 
 ### Meshing Engine
 - `Q4` structured mesh cho hình chữ nhật
-- `T3` Delaunay mesh cho PSLG/phức tạp hơn
-- Refinement theo `min_angle`, `max_area`, `max_edge_length`
+- `T3` native `BuildDelaunay` mesh cho PSLG/phức tạp hơn
+- `BuildDelaunay` dùng quad-edge divide-and-conquer, lower tangent merge, InCircle predicate, và không phụ thuộc SciPy/Qhull trong path tạo tam giác
+- Refinement theo `min_angle`, `max_area`, `max_edge_length`, `max_circumradius_ratio`
 - Kiểm tra chất lượng: `theta_min`, `circumradius / shortest edge`, empty circumcircle
 
 ### Dashboard & Analysis
@@ -33,7 +34,8 @@ Hệ thống hỗ trợ luồng:
 
 ### Project & Export
 - Project snapshot CRUD theo user
-- Export mesh: `json`, `dat`, `csv` legacy, `csv_zip` chuẩn mới, `shape`
+- Export mesh: `json`, `dat`, `csv`, `csv_zip`, `shape`
+- `csv` là một file full mesh gồm cả node rows và element rows
 - `csv_zip` chứa cả `nodes.csv` và `elements.csv`
 
 ### FEA
@@ -60,8 +62,8 @@ Hệ thống hỗ trợ luồng:
 - FEA request dùng `node_id` dạng **0-based**
 - Quad mesh chỉ hỗ trợ **axis-aligned rectangle**, không hỗ trợ holes
 - Boolean CSG có thể trả về **nhiều component**
-- `format=csv` là legacy nodes-only export
-- `format=csv_zip` là format được khuyến nghị cho solver
+- `format=csv` trả full mesh trong một CSV; `format=csv_zip` trả `nodes.csv` + `elements.csv`
+- PostgreSQL enum hiện chưa có Alembic migration; nếu nâng cấp DB cũ cần thêm giá trị `triangle` vào enum geometry type hoặc dùng fresh DB cho bản nộp.
 - WebSocket dashboard: `/api/ws/dashboard`
 
 ### Boolean CSG Response
@@ -153,6 +155,7 @@ make down
 |--------|----------|--------|
 | POST | `/api/geometry/rectangle` | Tạo rectangle |
 | POST | `/api/geometry/circle` | Tạo circle |
+| POST | `/api/geometry/triangle` | Tạo triangle |
 | POST | `/api/geometry/polygon` | Tạo polygon |
 | POST | `/api/geometry/boolean` | Boolean CSG |
 | GET | `/api/geometry/{id}` | Lấy geometry |

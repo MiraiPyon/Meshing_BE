@@ -4,10 +4,13 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 from enum import Enum
 
+SQRT_TWO = 2 ** 0.5
+
 
 class GeometryType(str, Enum):
     RECTANGLE = "rectangle"
     CIRCLE = "circle"
+    TRIANGLE = "triangle"
     POLYGON = "polygon"
 
 
@@ -33,6 +36,20 @@ class CircleCreate(BaseModel):
     center_x: float = Field(..., description="Tọa độ x tâm")
     center_y: float = Field(..., description="Tọa độ y tâm")
     radius: float = Field(..., gt=0, description="Bán kính")
+
+
+class TriangleCreate(BaseModel):
+    """Request tạo hình tam giác từ đúng 3 điểm."""
+    name: str = "Triangle"
+    points: List[List[float]] = Field(..., min_length=3, max_length=3, description="3 điểm [x, y]")
+
+    @field_validator("points")
+    @classmethod
+    def _validate_points(cls, value: List[List[float]]) -> List[List[float]]:
+        for p in value:
+            if len(p) != 2:
+                raise ValueError("Each triangle point must have exactly 2 coordinates")
+        return value
 
 
 class PolygonCreate(BaseModel):
@@ -74,6 +91,12 @@ class DelaunayMeshCreate(BaseModel):
         gt=0,
         description="Độ dài cạnh tối đa cho refinement",
     )
+    max_circumradius_ratio: Optional[float] = Field(
+        SQRT_TWO,
+        gt=1,
+        le=SQRT_TWO,
+        description="Ngưỡng r/l tối đa, mặc định sqrt(2)",
+    )
 
 
 class MeshFromSketchCreate(BaseModel):
@@ -88,6 +111,12 @@ class MeshFromSketchCreate(BaseModel):
         None,
         gt=0,
         description="Độ dài cạnh tối đa cho refinement (Delaunay)",
+    )
+    max_circumradius_ratio: Optional[float] = Field(
+        SQRT_TWO,
+        gt=1,
+        le=SQRT_TWO,
+        description="Ngưỡng r/l tối đa, mặc định sqrt(2)",
     )
     nx: int = Field(10, ge=1, le=200, description="Số phần tử theo x (Quad)")
     ny: int = Field(10, ge=1, le=200, description="Số phần tử theo y (Quad)")
@@ -123,6 +152,7 @@ class ShapeDatMeshCreate(BaseModel):
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa mỗi tam giác")
     min_angle: Optional[float] = Field(20.7, ge=20.7, le=60, description="Góc tối thiểu")
     max_edge_length: Optional[float] = Field(None, gt=0, description="Độ dài cạnh tối đa")
+    max_circumradius_ratio: Optional[float] = Field(SQRT_TWO, gt=1, le=SQRT_TWO, description="Ngưỡng r/l tối đa")
 
 
 class BooleanOperationRequest(BaseModel):

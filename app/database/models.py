@@ -51,6 +51,7 @@ class RefreshToken(Base):
 class GeometryType(str, enum.Enum):
     RECTANGLE = "rectangle"
     CIRCLE = "circle"
+    TRIANGLE = "triangle"
     POLYGON = "polygon"
 
 

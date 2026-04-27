@@ -2,7 +2,7 @@ import json
 from uuid import UUID
 from app.database.models import Geometry as GeometryModel
 from app.database.models import GeometryType as GeometryTypeEnum
-from app.schemas.request import RectangleCreate, CircleCreate, PolygonCreate
+from app.schemas.request import RectangleCreate, CircleCreate, TriangleCreate, PolygonCreate
 from app.engines.pslg import build_pslg
 
 
@@ -15,6 +15,8 @@ class GeometryFactory:
             return GeometryFactory._create_rectangle(data, user_id)
         if isinstance(data, CircleCreate):
             return GeometryFactory._create_circle(data, user_id)
+        if isinstance(data, TriangleCreate):
+            return GeometryFactory._create_triangle(data, user_id)
         if isinstance(data, PolygonCreate):
             return GeometryFactory._create_polygon(data, user_id)
         raise ValueError("Unsupported geometry creation request.")
@@ -50,6 +52,25 @@ class GeometryFactory:
             bound_x_max=data.center_x + data.radius,
             bound_y_min=data.center_y - data.radius,
             bound_y_max=data.center_y + data.radius,
+        )
+
+    @staticmethod
+    def _create_triangle(data: TriangleCreate, user_id: UUID) -> GeometryModel:
+        pslg = build_pslg(outer_boundary=[tuple(p) for p in data.points], holes=[])
+        outer = pslg["outer_boundary"]
+        x_coords = [p[0] for p in outer]
+        y_coords = [p[1] for p in outer]
+
+        return GeometryModel(
+            user_id=user_id,
+            name=data.name,
+            geometry_type=GeometryTypeEnum.TRIANGLE,
+            points=json.dumps(outer),
+            closed=1,
+            bound_x_min=min(x_coords),
+            bound_x_max=max(x_coords),
+            bound_y_min=min(y_coords),
+            bound_y_max=max(y_coords),
         )
 
     @staticmethod

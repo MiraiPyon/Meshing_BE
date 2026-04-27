@@ -1,8 +1,10 @@
 import math
+from pathlib import Path
 
 import pytest
 
 from app.database.models import MeshType as MeshTypeEnum
+from app.engines.build_delaunay import BuildDelaunay
 from app.engines.delaunay_engine import DelaunayMeshEngine
 from app.engines.pslg import build_pslg, parse_shape_dat
 from app.services.fea_service import FEAService
@@ -56,6 +58,37 @@ def test_shape_dat_parser_outer_and_hole_sections():
     assert len(holes[0]) == 4
 
 
+def test_build_delaunay_native_deterministic_empty_circumcircle():
+    points = [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [0.5, 0.45],
+    ]
+
+    tris_a = BuildDelaunay.triangulate(points)
+    tris_b = BuildDelaunay.triangulate(points)
+
+    assert tris_a == tris_b
+    assert len(tris_a) > 0
+    assert BuildDelaunay.validate_empty_circumcircle(points, tris_a)
+
+
+def test_build_delaunay_structured_grid_empty_circumcircle():
+    points = [[float(x), float(y)] for y in range(4) for x in range(5)]
+    triangles = BuildDelaunay.triangulate(points)
+
+    assert len(triangles) > 0
+    assert BuildDelaunay.validate_empty_circumcircle(points, triangles)
+
+
+def test_delaunay_engine_no_scipy_delaunay_import():
+    source = Path("app/engines/delaunay_engine.py").read_text(encoding="utf-8")
+    assert "from scipy.spatial import Delaunay" not in source
+    assert "Delaunay(" not in source
+
+
 def test_delaunay_refinement_produces_quality_metrics_and_circumcircle_check():
     engine = DelaunayMeshEngine()
     outer = [(0.0, 0.0), (3.0, 0.0), (3.0, 2.0), (0.0, 2.0)]
@@ -96,6 +129,7 @@ def test_mesh_analysis_builds_nodes_edges_tris_matrices_and_dof():
     assert len(conn["nodes_matrix"]) == 3
     assert len(conn["edges_matrix"]) == 3
     assert len(conn["tris_matrix"]) == 1
+    assert all(len(edge) == 10 for edge in conn["edges_matrix"])
 
 
 def test_fea_service_index_normalization_supports_zero_and_one_based():
@@ -194,6 +228,7 @@ def test_quad_sketch_guardrail_rejects_holes_and_non_rectangles():
             max_area=None,
             min_angle=20.7,
             max_edge_length=None,
+            max_circumradius_ratio=math.sqrt(2.0),
             nx=4,
             ny=3,
         )
@@ -209,6 +244,7 @@ def test_quad_sketch_guardrail_rejects_holes_and_non_rectangles():
             max_area=None,
             min_angle=20.7,
             max_edge_length=None,
+            max_circumradius_ratio=math.sqrt(2.0),
             nx=4,
             ny=3,
         )

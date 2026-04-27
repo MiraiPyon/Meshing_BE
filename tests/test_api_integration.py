@@ -55,6 +55,13 @@ def test_geometry_creation(auth_token):
     assert resp.status_code in (200, 201)
     assert resp.json()["geometry_type"] == "rectangle"
 
+    resp = client.post("/api/geometry/triangle", json={
+        "name": "Tri1", "points": [[0, 0], [2, 0], [0, 1]]
+    }, headers=headers)
+    assert resp.status_code in (200, 201)
+    assert resp.json()["geometry_type"] == "triangle"
+    assert len(resp.json()["points"]) == 3
+
 def test_mesh_creation(auth_token):
     headers = {"Authorization": f"Bearer {auth_token}"}
     # Create Geometry
@@ -186,7 +193,7 @@ def test_export_csv_zip_contains_nodes_and_elements(auth_token):
         assert len(elems_csv) == element_count + 1
 
 
-def test_export_csv_legacy_includes_deprecation_header(auth_token):
+def test_export_csv_contains_nodes_and_elements(auth_token):
     headers = {"Authorization": f"Bearer {auth_token}"}
 
     geo_resp = client.post("/api/geometry/rectangle", json={
@@ -202,8 +209,11 @@ def test_export_csv_legacy_includes_deprecation_header(auth_token):
 
     resp = client.get(f"/api/mesh/{mesh_id}/export?format=csv", headers=headers)
     assert resp.status_code == 200
-    assert "x-export-deprecation" in resp.headers
-    assert "csv_zip" in resp.headers["x-export-deprecation"]
+    assert resp.headers["content-type"].startswith("text/csv")
+    csv_text = resp.text
+    assert "section,id,x,y" in csv_text.splitlines()[0]
+    assert "node,1," in csv_text
+    assert "element,1," in csv_text
 
 
 def test_quad_sketch_endpoint_rejects_holes_and_non_rectangle(auth_token):

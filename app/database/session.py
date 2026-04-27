@@ -36,6 +36,7 @@ def init_db():
     _fix_legacy_auth_schema()
     _ensure_picture_column()
     _ensure_mesh_meshing_params_column()
+    _ensure_triangle_geometry_enum()
     Base.metadata.create_all(bind=engine)
 
 
@@ -140,3 +141,33 @@ def _ensure_mesh_meshing_params_column() -> None:
         ).fetchone()
         if table_exists:
             conn.execute(text("ALTER TABLE meshes ADD COLUMN meshing_params TEXT"))
+
+
+def _ensure_triangle_geometry_enum() -> None:
+    """Add TRIANGLE to the PostgreSQL geometry enum when upgrading an old DB."""
+    if not database_url.startswith("postgresql"):
+        return
+
+    enum_type = "geometrytype"
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        type_exists = conn.execute(
+            text("SELECT 1 FROM pg_type WHERE typname = :enum_type"),
+            {"enum_type": enum_type},
+        ).fetchone()
+        if not type_exists:
+            return
+
+        value_exists = conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM pg_enum e
+                JOIN pg_type t ON t.oid = e.enumtypid
+                WHERE t.typname = :enum_type
+                  AND e.enumlabel = 'TRIANGLE'
+                """
+            ),
+            {"enum_type": enum_type},
+        ).fetchone()
+        if not value_exists:
+            conn.execute(text(f"ALTER TYPE {enum_type} ADD VALUE 'TRIANGLE'"))

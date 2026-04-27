@@ -1,7 +1,7 @@
 import pytest
 from uuid import uuid4
 from app.engines.geometry_factory import GeometryFactory
-from app.schemas.request import RectangleCreate, CircleCreate, PolygonCreate
+from app.schemas.request import RectangleCreate, CircleCreate, TriangleCreate, PolygonCreate
 from app.database.models import GeometryType
 
 def test_create_rectangle_from_factory():
@@ -33,6 +33,17 @@ def test_create_polygon_from_factory():
     assert geo.user_id == user_id
     assert geo.geometry_type == GeometryType.POLYGON
     assert geo.bound_x_max == 1
+    assert geo.bound_y_max == 1
+    assert geo.closed == 1
+
+def test_create_triangle_from_factory():
+    user_id = uuid4()
+    req = TriangleCreate(name="tri", points=[[0, 0], [2, 0], [0, 1]])
+    geo = GeometryFactory.create_geometry(req, user_id)
+
+    assert geo.user_id == user_id
+    assert geo.geometry_type == GeometryType.TRIANGLE
+    assert geo.bound_x_max == 2
     assert geo.bound_y_max == 1
     assert geo.closed == 1
 
