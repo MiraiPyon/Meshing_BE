@@ -49,8 +49,8 @@ class FEAService:
         nodes_raw = json.loads(mesh.nodes)
         elements_raw = json.loads(mesh.elements)
         nodes = np.array(nodes_raw)
-        # Normalize mesh connectivity to 1-based indexing expected by FEA core.
-        elements = self._normalize_elements_to_one_based(elements_raw, len(nodes_raw))
+        # Normalize mesh connectivity to 1-based CCW indexing expected by FEA core.
+        elements = self._prepare_elements_for_solver(elements_raw, nodes_raw)
 
         # 2. Material
         if req.material.preset:
@@ -250,6 +250,41 @@ class FEAService:
         if min_idx >= 1 and max_idx <= node_count:
             return elements
         raise ValueError("Mesh element indices are out of valid node range")
+
+    @staticmethod
+    def _prepare_elements_for_solver(elements_raw: List[List[int]], nodes_raw: List[List[float]]) -> List[List[int]]:
+        """Normalize indexing and enforce valid CCW triangle orientation for FEA."""
+        elements = FEAService._normalize_elements_to_one_based(elements_raw, len(nodes_raw))
+        nodes = np.asarray(nodes_raw, dtype=float)
+        if len(nodes) == 0:
+            return elements
+
+        bbox = nodes.max(axis=0) - nodes.min(axis=0)
+        area_tol = max(1e-14, float(np.linalg.norm(bbox)) ** 2 * 1e-14)
+        prepared: List[List[int]] = []
+
+        for elem in elements:
+            if len(set(elem)) != len(elem):
+                continue
+            if any(idx < 1 or idx > len(nodes_raw) for idx in elem):
+                raise ValueError("Mesh element indices are out of valid node range")
+
+            if len(elem) == 3:
+                p0, p1, p2 = nodes[[idx - 1 for idx in elem]]
+                signed_area2 = float(
+                    (p1[0] - p0[0]) * (p2[1] - p0[1])
+                    - (p2[0] - p0[0]) * (p1[1] - p0[1])
+                )
+                if abs(signed_area2) * 0.5 <= area_tol:
+                    continue
+                if signed_area2 < 0.0:
+                    elem = [elem[0], elem[2], elem[1]]
+
+            prepared.append(elem)
+
+        if elements and not prepared:
+            raise ValueError("Mesh has no non-degenerate elements for FEA")
+        return prepared
 
 
 # Singleton

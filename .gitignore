@@ -16,18 +16,18 @@ venv/
 env/
 ENV/
 
-# Environment variables
+# Environment variables / secrets
 .env
 .env.*
 !.env.example
 
-# IDE
+# IDE/editor
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Testing & coverage
+# Testing and coverage
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -41,6 +41,8 @@ logs/
 
 # Local database artifacts
 meshing.db
+*.sqlite
+*.sqlite3
 
 # Local research/reference artifacts
 docs/editor_in_chief.pdf

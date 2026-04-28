@@ -359,8 +359,8 @@ class DelaunayMeshEngine(MeshEngine):
         kept: List[List[int]] = []
         for simplex in simplices:
             tri_pts = points[simplex]
-            area = abs(self._cross2d(tri_pts[1] - tri_pts[0], tri_pts[2] - tri_pts[0])) * 0.5
-            if area <= EPSILON:
+            signed_area2 = self._cross2d(tri_pts[1] - tri_pts[0], tri_pts[2] - tri_pts[0])
+            if abs(signed_area2) * 0.5 <= EPSILON:
                 continue
 
             centroid = tri_pts.mean(axis=0)
@@ -373,7 +373,10 @@ class DelaunayMeshEngine(MeshEngine):
                 point_in_domain((float(p[0]), float(p[1])), outer_loop, holes_loops)
                 for p in probes
             ):
-                kept.append([int(simplex[0]), int(simplex[1]), int(simplex[2])])
+                a, b, c = int(simplex[0]), int(simplex[1]), int(simplex[2])
+                if signed_area2 < 0.0:
+                    b, c = c, b
+                kept.append([a, b, c])
 
         return kept
 

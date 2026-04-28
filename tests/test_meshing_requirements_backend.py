@@ -6,6 +6,13 @@ import pytest
 from app.database.models import MeshType as MeshTypeEnum
 from app.engines.build_delaunay import BuildDelaunay
 from app.engines.delaunay_engine import DelaunayMeshEngine
+from app.engines.fea.cantilever_benchmark import (
+    CantileverBenchmarkCase,
+    CantileverBenchmarkConfig,
+    exact_neutral_axis_deflection,
+    run_cantilever_benchmark,
+    run_cantilever_case,
+)
 from app.engines.pslg import build_pslg, parse_shape_dat
 from app.services.fea_service import FEAService
 from app.services.mesh_service import mesh_service
@@ -143,6 +150,15 @@ def test_fea_service_index_normalization_supports_zero_and_one_based():
     assert normalized_one == one_based
 
 
+def test_fea_service_prepares_degenerate_and_cw_triangles_for_solver():
+    nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.5, 0.0]]
+    elements = [[0, 2, 1], [0, 1, 3]]
+
+    prepared = FEAService._prepare_elements_for_solver(elements, nodes)
+
+    assert prepared == [[1, 2, 3]]
+
+
 def test_quad_mesh_generates_ccw_elements():
     from app.engines.factory import MeshEngineFactory
     engine = MeshEngineFactory.create("quad")
@@ -182,6 +198,73 @@ def test_strategy_pattern_uniform_generation():
 
     assert len(nodes_q) > 0 and len(elements_q) > 0
     assert len(nodes_d) > 0 and len(elements_d) > 0
+
+
+def test_cantilever_exact_solution_matches_section_iv_parameters():
+    cfg = CantileverBenchmarkConfig()
+
+    assert exact_neutral_axis_deflection(0.0, cfg) == 0.0
+    assert cfg.exact_tip_deflection == pytest.approx(-2.0e-4)
+
+
+def test_q4_cantilever_benchmark_converges_against_exact_solution():
+    results = run_cantilever_benchmark(
+        cases=[
+            CantileverBenchmarkCase("Q4-4x2", "Q4", {"nx": 4, "ny": 2}),
+            CantileverBenchmarkCase("Q4-10x2", "Q4", {"nx": 10, "ny": 2}),
+            CantileverBenchmarkCase("Q4-20x4", "Q4", {"nx": 20, "ny": 4}),
+        ]
+    )
+
+    rel_errors = [result["tip_rel_error"] for result in results]
+    assert all(result["status"] == "PASS" for result in results)
+    assert rel_errors[0] > rel_errors[1] > rel_errors[2]
+    assert rel_errors[-1] <= 0.12
+
+
+def test_t3_delaunay_cantilever_mesh_is_valid_for_fea():
+    result = run_cantilever_case(
+        CantileverBenchmarkCase(
+            "T3-Delaunay-smoke",
+            "T3",
+            {
+                "max_edge_length": 0.75,
+                "min_angle": 20.7,
+                "max_circumradius_ratio": math.sqrt(2.0),
+                "max_refine_iterations": 1,
+            },
+        )
+    )
+
+    assert result["status"] == "PASS"
+    assert result["element_count"] > 0
+    assert result["tip_uy"] < 0.0
+    assert result["mesh_s"] < 2.0
+
+
+def test_delaunay_engine_returns_ccw_non_degenerate_triangles_for_slender_beam():
+    engine = DelaunayMeshEngine()
+    pslg = build_pslg(
+        outer_boundary=[(0.0, 0.0), (10.0, 0.0), (10.0, 1.0), (0.0, 1.0)],
+        holes=[],
+    )
+
+    nodes, elements = engine.generate_from_pslg(
+        pslg=pslg,
+        max_edge_length=0.75,
+        min_angle=20.7,
+        max_circumradius_ratio=math.sqrt(2.0),
+        max_refine_iterations=1,
+    )
+
+    assert len(elements) > 0
+    for a, b, c in elements:
+        p0, p1, p2 = nodes[a], nodes[b], nodes[c]
+        signed_area2 = (
+            (p1[0] - p0[0]) * (p2[1] - p0[1])
+            - (p2[0] - p0[0]) * (p1[1] - p0[1])
+        )
+        assert signed_area2 > 1e-12
 
 
 def test_delaunay_stability_for_wrench_like_polygon_with_holes():
