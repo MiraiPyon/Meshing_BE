@@ -5,11 +5,11 @@ FastAPI backend for the Meshing 2D platform. It owns authentication, geometry CR
 ## Capabilities
 
 - Geometry primitives: rectangle, circle, triangle, polygon.
-- Geometry records: create, list, get, delete, plus Boolean CSG (`union`, `subtract`, `intersect`).
-- PSLG processing: duplicate point cleanup, outer-loop CCW normalization, hole-loop CW normalization, self-intersection validation.
+- Geometry records: create, list, get, delete, plus Boolean CSG (`union`, `subtract`, `intersect`) with disconnected multi-component output preserved end to end.
+- PSLG processing: duplicate point cleanup, outer-loop CCW normalization, hole-loop CW normalization, self-intersection validation, and multi-component `shape.dat` parsing/export.
 - Meshing:
-  - `Q4`: mapped structured grid for axis-aligned rectangles.
-  - `T3`: native `BuildDelaunay` path with quad-edge divide-and-conquer, InCircle checks, PSLG domain filtering, encroached-segment splitting, and quality refinement.
+  - `Q4`: mapped structured grid for axis-aligned rectangular components, including rectangular `shape.dat` input.
+  - `T3`: native `BuildDelaunay` path with quad-edge divide-and-conquer, InCircle checks, PSLG domain filtering, encroached-segment splitting, adaptive size field, Laplacian smoothing, and quality refinement.
 - Dashboard analysis: DOF, mesh quality, element-size distribution, empty-circumcircle check, `nodes_matrix`, `edges_matrix`, `tris_matrix`.
 - FEA: plane stress / plane strain, sparse stiffness assembly, nodal/line loads, Dirichlet BC, reactions, stress/strain/Von Mises recovery.
 - Exports: `json`, `dat`, full `csv`, `csv_zip`, and `shape`.
@@ -30,7 +30,9 @@ Swagger UI: `http://localhost:8000/docs`
 
 - Protected endpoints require `Authorization: Bearer <access_token>`.
 - FEA request `node_id` values are 0-based.
-- Q4 meshing accepts only axis-aligned rectangles and does not support holes.
+- Q4 meshing accepts only axis-aligned rectangular components and does not support holes.
+- `shape.dat` supports one or more `OUTER` sections; `HOLE` sections attach to the preceding outer loop.
+- Delaunay multi-component meshing keeps disconnected domains in a single mesh response and dashboard payload.
 - Delaunay mesh elements are normalized before FEA so T3 elements are non-degenerate and CCW.
 - `format=csv` returns one full mesh CSV; `format=csv_zip` returns separate `nodes.csv` and `elements.csv`.
 - Existing PostgreSQL databases created before `triangle` support may need enum upgrade; `init_db()` attempts to add it automatically.
@@ -60,6 +62,16 @@ Optional 10k-element performance gate:
 ```bash
 RUN_PERFORMANCE_BENCHMARK=1 .venv/bin/python -m pytest -q tests/test_performance_benchmark.py -s
 ```
+
+## Pre-push Checklist
+
+```bash
+make ci
+.venv/bin/python scripts/run_cantilever_benchmark.py
+git --no-pager status --short --ignored
+```
+
+Use `RELEASE_CHECKLIST.md` for the manual smoke-test flow before pushing.
 
 ## Cantilever Accuracy Benchmark
 

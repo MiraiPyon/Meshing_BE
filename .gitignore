@@ -20,6 +20,8 @@ ENV/
 .env
 .env.*
 !.env.example
+!docker/.env.example
+!env.example
 
 # IDE/editor
 .vscode/
@@ -32,6 +34,7 @@ ENV/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
 coverage.xml
 
@@ -45,8 +48,7 @@ meshing.db
 *.sqlite3
 
 # Local research/reference artifacts
-docs/editor_in_chief.pdf
-docs/editor_in_chief.txt
+docs/
 
 # OS
 .DS_Store

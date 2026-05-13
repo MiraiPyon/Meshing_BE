@@ -4,7 +4,7 @@ VENV_PYTHON := $(VENV)/bin/python
 PYTHON = $(shell if [ -x "$(VENV_PYTHON)" ]; then printf '%s' "$(VENV_PYTHON)"; else command -v python3 || command -v python; fi)
 PIP := $(PYTHON) -m pip
 COMPOSE := docker compose --env-file docker/.env -f docker/docker-compose.yml
-LINT_PATHS := app/api app/core tests
+LINT_PATHS := app tests
 PORT ?= 8000
 
 .PHONY: venv install bootstrap-env hooks secret-scan test test-fea test-fea-stress test-stress lint format check ci up down run run-alt

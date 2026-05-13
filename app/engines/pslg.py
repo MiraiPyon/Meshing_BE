@@ -6,6 +6,7 @@ from typing import Iterable, List, Sequence, Tuple
 
 
 Point = Tuple[float, float]
+ShapeComponent = Tuple[List[Point], List[List[Point]]]
 EPSILON = 1e-9
 
 
@@ -315,6 +316,17 @@ def parse_shape_dat(shape_dat: str) -> Tuple[List[Point], List[List[Point]]]:
 
     If sections are omitted, all coordinate lines are treated as OUTER.
     """
+    components = parse_shape_dat_components(shape_dat)
+    return components[0]
+
+
+def parse_shape_dat_components(shape_dat: str) -> List[ShapeComponent]:
+    """
+    Parse shape.dat text into one or more polygon components.
+
+    Multiple OUTER sections are treated as disconnected components; HOLE sections
+    following an OUTER belong to that component until the next OUTER starts.
+    """
     lines = []
     for raw in shape_dat.splitlines():
         stripped = raw.split("#", maxsplit=1)[0].strip()
@@ -329,46 +341,66 @@ def parse_shape_dat(shape_dat: str) -> Tuple[List[Point], List[List[Point]]]:
         outer = _parse_point_lines(lines)
         if len(outer) < 3:
             raise ValueError("shape.dat requires at least 3 points for OUTER boundary")
-        return outer, []
+        return [(outer, [])]
 
+    components: List[ShapeComponent] = []
     outer: List[Point] = []
     holes: List[List[Point]] = []
     current: List[Point] = []
     mode = ""
 
+    def commit_current_section() -> None:
+        nonlocal outer, holes, current, mode
+        if not mode:
+            return
+        if mode == "OUTER":
+            outer = current
+        elif mode == "HOLE" and current:
+            holes.append(current)
+        current = []
+        mode = ""
+
+    def commit_component() -> None:
+        nonlocal outer, holes
+        if not outer and not holes:
+            return
+        if len(outer) < 3:
+            raise ValueError("shape.dat OUTER section must contain at least 3 points")
+        components.append((outer, holes))
+        outer = []
+        holes = []
+
     for line in lines:
         upper = line.upper()
-        if upper in {"OUTER", "HOLE"}:
-            if mode and current:
-                if mode == "OUTER":
-                    outer = current
-                else:
-                    holes.append(current)
-            mode = upper
+        if upper == "OUTER":
+            commit_current_section()
+            commit_component()
+            mode = "OUTER"
+            current = []
+            continue
+
+        if upper == "HOLE":
+            commit_current_section()
+            if len(outer) < 3:
+                raise ValueError("shape.dat HOLE section must follow a valid OUTER section")
+            mode = "HOLE"
             current = []
             continue
 
         if upper == "END":
-            if mode == "OUTER":
-                outer = current
-            elif mode == "HOLE" and current:
-                holes.append(current)
-            mode = ""
-            current = []
+            commit_current_section()
             continue
 
-        point = _parse_point_line(line)
-        current.append(point)
+        if not mode:
+            raise ValueError("shape.dat coordinate lines must appear inside OUTER or HOLE sections")
+        current.append(_parse_point_line(line))
 
-    if mode and current:
-        if mode == "OUTER":
-            outer = current
-        else:
-            holes.append(current)
+    commit_current_section()
+    commit_component()
 
-    if len(outer) < 3:
+    if not components:
         raise ValueError("shape.dat OUTER section must contain at least 3 points")
-    return outer, holes
+    return components
 
 
 def _parse_point_lines(lines: Iterable[str]) -> List[Point]:
@@ -387,14 +419,24 @@ def _parse_point_line(line: str) -> Point:
 
 def to_shape_dat(outer: Sequence[Point], holes: Sequence[Sequence[Point]] | None = None) -> str:
     """Serialize outer/holes loops into shape.dat text."""
-    lines = ["OUTER"]
-    for x, y in outer:
-        lines.append(f"{x:.12g} {y:.12g}")
-    lines.append("END")
+    return to_shape_dat_components([(outer, holes or [])])
 
-    for hole in holes or []:
-        lines.append("HOLE")
-        for x, y in hole:
+
+def to_shape_dat_components(
+    components: Sequence[Tuple[Sequence[Point], Sequence[Sequence[Point]]]],
+) -> str:
+    """Serialize one or more outer/holes components into shape.dat text."""
+    lines = ["OUTER"]
+    for component_idx, (outer, holes) in enumerate(components):
+        if component_idx > 0:
+            lines.append("OUTER")
+        for x, y in outer:
             lines.append(f"{x:.12g} {y:.12g}")
         lines.append("END")
+
+        for hole in holes or []:
+            lines.append("HOLE")
+            for x, y in hole:
+                lines.append(f"{x:.12g} {y:.12g}")
+            lines.append("END")
     return "\n".join(lines)

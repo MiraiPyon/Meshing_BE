@@ -31,6 +31,7 @@ class GeometryResponse(BaseModel):
     radius: Optional[float] = None
     # Polygon
     points: Optional[List[List[float]]] = None
+    components: Optional[List[dict]] = None
     closed: Optional[bool] = None
     # Computed
     bounds: Optional[Bounds] = None

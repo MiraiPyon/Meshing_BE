@@ -12,8 +12,9 @@ from app.engines.fea.cantilever_benchmark import (
     exact_neutral_axis_deflection,
     run_cantilever_benchmark,
     run_cantilever_case,
+    write_cantilever_benchmark_artifacts,
 )
-from app.engines.pslg import build_pslg, parse_shape_dat
+from app.engines.pslg import build_pslg, parse_shape_dat, parse_shape_dat_components
 from app.services.fea_service import FEAService
 from app.services.mesh_service import mesh_service
 
@@ -63,6 +64,28 @@ def test_shape_dat_parser_outer_and_hole_sections():
     assert len(outer) == 4
     assert len(holes) == 1
     assert len(holes[0]) == 4
+
+
+def test_shape_dat_parser_supports_multiple_components():
+    shape_dat = """
+    OUTER
+    0 0
+    1 0
+    1 1
+    0 1
+    END
+    OUTER
+    3 0
+    4 0
+    4 1
+    3 1
+    END
+    """
+
+    components = parse_shape_dat_components(shape_dat)
+    assert len(components) == 2
+    assert len(components[0][0]) == 4
+    assert len(components[1][0]) == 4
 
 
 def test_build_delaunay_native_deterministic_empty_circumcircle():
@@ -121,6 +144,34 @@ def test_delaunay_refinement_produces_quality_metrics_and_circumcircle_check():
 
     one_based = [[idx + 1 for idx in tri] for tri in elements]
     assert DelaunayMeshEngine.check_empty_circumcircle(nodes, one_based)
+
+
+def test_delaunay_adaptive_size_field_and_smoothing_keep_valid_mesh():
+    engine = DelaunayMeshEngine()
+    outer = [(0.0, 0.0), (2.0, 0.0), (2.0, 1.0), (0.0, 1.0)]
+
+    pslg = build_pslg(outer_boundary=outer, holes=[])
+    nodes, elements = engine.generate_from_pslg(
+        pslg=pslg,
+        resolution=10,
+        min_angle=20.7,
+        max_edge_length=0.5,
+        max_refine_iterations=4,
+        smoothing_iterations=1,
+        adaptive_size_field=True,
+        adaptive_min_edge_factor=0.45,
+        adaptive_influence_radius_factor=0.2,
+    )
+
+    assert len(nodes) > 0
+    assert len(elements) > 0
+    one_based = [[idx + 1 for idx in tri] for tri in elements]
+    assert DelaunayMeshEngine.check_empty_circumcircle(nodes, one_based)
+
+    analysis = mesh_service._build_mesh_analysis(nodes, elements, MeshTypeEnum.DELAUNAY)
+    quality = analysis["dashboard"]["mesh_quality"]
+    assert quality["min_angle_deg"] is not None
+    assert quality["skinny_triangle_count"] < len(elements)
 
 
 def test_mesh_analysis_builds_nodes_edges_tris_matrices_and_dof():
@@ -205,6 +256,21 @@ def test_cantilever_exact_solution_matches_section_iv_parameters():
 
     assert exact_neutral_axis_deflection(0.0, cfg) == 0.0
     assert cfg.exact_tip_deflection == pytest.approx(-2.0e-4)
+
+
+def test_cantilever_benchmark_report_documents_section_iv_mapping(tmp_path):
+    report_path = tmp_path / "cantilever.md"
+    csv_path = tmp_path / "cantilever.csv"
+
+    results = write_cantilever_benchmark_artifacts(report_path=report_path, csv_path=csv_path)
+    report = report_path.read_text(encoding="utf-8")
+
+    assert len(results) == 4
+    assert csv_path.exists()
+    assert "Section IV uses LST/T6 triangular elements" in report
+    assert "supports T3 and Q4 only" in report
+    assert "clamp at `x=0`" in report
+    assert "Exact tip deflection: `-2.000000e-04 m`" in report
 
 
 def test_q4_cantilever_benchmark_converges_against_exact_solution():

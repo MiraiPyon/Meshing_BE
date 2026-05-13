@@ -32,6 +32,10 @@ class DelaunayMeshEngine(MeshEngine):
         max_edge_length = kwargs.get("max_edge_length")
         max_circumradius_ratio = kwargs.get("max_circumradius_ratio", math.sqrt(2.0))
         max_refine_iterations = kwargs.get("max_refine_iterations", 25)
+        smoothing_iterations = int(kwargs.get("smoothing_iterations", 0) or 0)
+        adaptive_size_field = bool(kwargs.get("adaptive_size_field", False))
+        adaptive_min_edge_factor = float(kwargs.get("adaptive_min_edge_factor", 0.45) or 0.45)
+        adaptive_influence_radius_factor = float(kwargs.get("adaptive_influence_radius_factor", 0.25) or 0.25)
 
         pslg = build_pslg(points, holes=holes or [])
         return self.generate_from_pslg(
@@ -42,6 +46,10 @@ class DelaunayMeshEngine(MeshEngine):
             max_edge_length=max_edge_length,
             max_circumradius_ratio=max_circumradius_ratio,
             max_refine_iterations=max_refine_iterations,
+            smoothing_iterations=smoothing_iterations,
+            adaptive_size_field=adaptive_size_field,
+            adaptive_min_edge_factor=adaptive_min_edge_factor,
+            adaptive_influence_radius_factor=adaptive_influence_radius_factor,
         )
 
     def generate_from_pslg(
@@ -53,6 +61,10 @@ class DelaunayMeshEngine(MeshEngine):
         max_edge_length: Optional[float] = None,
         max_refine_iterations: int = 25,
         max_circumradius_ratio: float = math.sqrt(2.0),
+        smoothing_iterations: int = 0,
+        adaptive_size_field: bool = False,
+        adaptive_min_edge_factor: float = 0.45,
+        adaptive_influence_radius_factor: float = 0.25,
     ) -> Tuple[List[List[float]], List[List[int]]]:
         outer = np.asarray(pslg["outer_boundary"], dtype=float)
         holes = [np.asarray(hole, dtype=float) for hole in pslg.get("holes", [])]
@@ -61,6 +73,11 @@ class DelaunayMeshEngine(MeshEngine):
         bbox_diag = float(math.hypot(float(span[0]), float(span[1])))
         target_edge = max_edge_length if max_edge_length is not None else bbox_diag / max(2 * resolution, 8)
         min_split_length = max(target_edge * 0.25, bbox_diag * 1e-4)
+        adaptive_min_edge_factor = min(1.0, max(0.2, float(adaptive_min_edge_factor)))
+        adaptive_influence_radius = max(
+            target_edge,
+            bbox_diag * max(0.01, float(adaptive_influence_radius_factor)),
+        )
 
         boundary_points = self._sample_boundary_points(outer, holes, max_edge_length)
         interior_points = self._generate_interior_points(
@@ -104,7 +121,12 @@ class DelaunayMeshEngine(MeshEngine):
                 min_angle=min_angle_limit,
                 max_area=max_area,
                 max_edge_length=max_edge_length,
+                base_edge_length=target_edge,
                 max_ratio=max_circumradius_ratio,
+                boundary_segments=boundary_segments,
+                adaptive_size_field=adaptive_size_field,
+                adaptive_min_edge_factor=adaptive_min_edge_factor,
+                adaptive_influence_radius=adaptive_influence_radius,
             )
             if not bad_triangles:
                 break
@@ -158,6 +180,24 @@ class DelaunayMeshEngine(MeshEngine):
             outer=outer,
             holes=holes,
         )
+
+        if smoothing_iterations > 0 and final_elements:
+            points = self._smooth_interior_points(
+                points=points,
+                triangles=final_elements,
+                outer=outer,
+                holes=holes,
+                boundary_segments=boundary_segments,
+                iterations=smoothing_iterations,
+                relaxation=0.5,
+            )
+            final_triangles = BuildDelaunay.triangulate(points)
+            final_elements = self._filter_triangles_in_domain(
+                simplices=np.asarray(final_triangles, dtype=int),
+                points=points,
+                outer=outer,
+                holes=holes,
+            )
 
         return points.tolist(), [[int(i) for i in tri] for tri in final_elements]
 
@@ -389,7 +429,12 @@ class DelaunayMeshEngine(MeshEngine):
         min_angle: float,
         max_area: Optional[float],
         max_edge_length: Optional[float],
+        base_edge_length: float,
         max_ratio: float,
+        boundary_segments: Sequence[Tuple[np.ndarray, np.ndarray]],
+        adaptive_size_field: bool,
+        adaptive_min_edge_factor: float,
+        adaptive_influence_radius: float,
     ) -> List[dict]:
         outer_loop = [tuple(p) for p in outer.tolist()]
         holes_loops = [[tuple(p) for p in hole.tolist()] for hole in holes]
@@ -409,16 +454,30 @@ class DelaunayMeshEngine(MeshEngine):
             ratio = circumradius / shortest if shortest > EPSILON else float("inf")
 
             area = abs(self._cross2d(tri_pts[1] - tri_pts[0], tri_pts[2] - tri_pts[0])) * 0.5
+            centroid = tri_pts.mean(axis=0)
+            edge_limit = max_edge_length
+            area_limit = max_area
+            if adaptive_size_field:
+                local_edge = self._adaptive_edge_length(
+                    point=centroid,
+                    boundary_segments=boundary_segments,
+                    base_edge_length=base_edge_length,
+                    min_edge_factor=adaptive_min_edge_factor,
+                    influence_radius=adaptive_influence_radius,
+                )
+                edge_limit = min(edge_limit, local_edge) if edge_limit is not None else local_edge
+                local_area = (local_edge ** 2 * math.sqrt(3.0)) / 4.0
+                area_limit = min(area_limit, local_area) if area_limit is not None else local_area
+
             violated = (
                 (min_ang < min_angle - 1e-9)
                 or (ratio > max_ratio + 1e-9)
-                or (max_area is not None and area > max_area + 1e-12)
-                or (max_edge_length is not None and longest > max_edge_length + 1e-9)
+                or (area_limit is not None and area > area_limit + 1e-12)
+                or (edge_limit is not None and longest > edge_limit + 1e-9)
             )
             if not violated:
                 continue
 
-            centroid = tri_pts.mean(axis=0)
             use_circumcenter = (
                 np.isfinite(circumcenter).all()
                 and point_in_domain(
@@ -430,10 +489,10 @@ class DelaunayMeshEngine(MeshEngine):
 
             severity = max(min_angle - min_ang, 0.0)
             severity += max(ratio - max_ratio, 0.0)
-            if max_area is not None:
-                severity += max(area - max_area, 0.0)
-            if max_edge_length is not None:
-                severity += max(longest - max_edge_length, 0.0)
+            if area_limit is not None:
+                severity += max(area - area_limit, 0.0)
+            if edge_limit is not None:
+                severity += max(longest - edge_limit, 0.0)
 
             bad.append(
                 {
@@ -450,6 +509,101 @@ class DelaunayMeshEngine(MeshEngine):
 
         bad.sort(key=lambda item: item["severity"], reverse=True)
         return bad[:200]
+
+    @staticmethod
+    def _adaptive_edge_length(
+        point: np.ndarray,
+        boundary_segments: Sequence[Tuple[np.ndarray, np.ndarray]],
+        base_edge_length: float,
+        min_edge_factor: float,
+        influence_radius: float,
+    ) -> float:
+        if not boundary_segments:
+            return base_edge_length
+
+        nearest = min(
+            DelaunayMeshEngine._point_segment_distance(point, a, b)
+            for a, b in boundary_segments
+        )
+        t = min(1.0, max(0.0, nearest / max(influence_radius, EPSILON)))
+        factor = min_edge_factor + (1.0 - min_edge_factor) * t
+        return max(base_edge_length * factor, base_edge_length * min_edge_factor)
+
+    @staticmethod
+    def _point_segment_distance(point: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
+        ab = b - a
+        denom = float(np.dot(ab, ab))
+        if denom <= EPSILON:
+            return float(np.linalg.norm(point - a))
+        t = float(np.dot(point - a, ab) / denom)
+        t = min(1.0, max(0.0, t))
+        projection = a + t * ab
+        return float(np.linalg.norm(point - projection))
+
+    def _smooth_interior_points(
+        self,
+        points: np.ndarray,
+        triangles: Sequence[Sequence[int]],
+        outer: np.ndarray,
+        holes: Sequence[np.ndarray],
+        boundary_segments: Sequence[Tuple[np.ndarray, np.ndarray]],
+        iterations: int,
+        relaxation: float,
+    ) -> np.ndarray:
+        if iterations <= 0 or len(points) == 0:
+            return points
+
+        outer_loop = [tuple(p) for p in outer.tolist()]
+        holes_loops = [[tuple(p) for p in hole.tolist()] for hole in holes]
+        span = outer.max(axis=0) - outer.min(axis=0)
+        boundary_tol = max(float(math.hypot(float(span[0]), float(span[1]))) * 1e-7, EPSILON)
+        smoothed = np.asarray(points, dtype=float).copy()
+
+        boundary_ids = {
+            idx
+            for idx, point in enumerate(smoothed)
+            if self._is_boundary_point(point, boundary_segments, boundary_tol)
+        }
+
+        for _ in range(iterations):
+            neighbors = self._triangle_adjacency(triangles, len(smoothed))
+            next_points = smoothed.copy()
+            for idx, node_neighbors in enumerate(neighbors):
+                if idx in boundary_ids or not node_neighbors:
+                    continue
+                avg = np.mean(smoothed[list(node_neighbors)], axis=0)
+                candidate = smoothed[idx] + relaxation * (avg - smoothed[idx])
+                if point_in_domain((float(candidate[0]), float(candidate[1])), outer_loop, holes_loops):
+                    next_points[idx] = candidate
+            smoothed = next_points
+
+        return smoothed
+
+    @staticmethod
+    def _triangle_adjacency(
+        triangles: Sequence[Sequence[int]],
+        node_count: int,
+    ) -> List[set[int]]:
+        adjacency: List[set[int]] = [set() for _ in range(node_count)]
+        for tri in triangles:
+            a, b, c = [int(v) for v in tri]
+            if max(a, b, c) >= node_count or min(a, b, c) < 0:
+                continue
+            adjacency[a].update((b, c))
+            adjacency[b].update((a, c))
+            adjacency[c].update((a, b))
+        return adjacency
+
+    @staticmethod
+    def _is_boundary_point(
+        point: np.ndarray,
+        boundary_segments: Sequence[Tuple[np.ndarray, np.ndarray]],
+        tol: float,
+    ) -> bool:
+        return any(
+            DelaunayMeshEngine._point_segment_distance(point, a, b) <= tol
+            for a, b in boundary_segments
+        )
 
     @staticmethod
     def _edge_lengths(tri_pts: np.ndarray) -> List[float]:

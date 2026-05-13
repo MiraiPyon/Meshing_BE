@@ -248,3 +248,98 @@ def test_quad_sketch_endpoint_rejects_holes_and_non_rectangle(auth_token):
     )
     assert non_rect.status_code == 400
     assert "axis-aligned rectangular" in non_rect.json()["detail"]
+
+
+def test_shape_dat_endpoint_supports_q4(auth_token):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    shape_dat = """
+    OUTER
+    0 0
+    4 0
+    4 2
+    0 2
+    END
+    """
+
+    resp = client.post(
+        "/api/mesh/from-shape-dat",
+        json={
+            "name": "shape_q4",
+            "shape_dat": shape_dat,
+            "element_type": "quad",
+            "nx": 4,
+            "ny": 2,
+        },
+        headers=headers,
+    )
+
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    assert data["mesh_type"] == "quad"
+    assert data["element_type"] == "Q4"
+    assert data["node_count"] == 15
+    assert data["element_count"] == 8
+    assert data["meshing_params"]["strategy"] == "quad"
+
+
+def test_shape_dat_endpoint_rejects_q4_holes(auth_token):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    shape_dat = """
+    OUTER
+    0 0
+    4 0
+    4 2
+    0 2
+    END
+    HOLE
+    1 0.5
+    2 0.5
+    2 1.5
+    1 1.5
+    END
+    """
+
+    resp = client.post(
+        "/api/mesh/from-shape-dat",
+        json={
+            "name": "shape_q4_bad_hole",
+            "shape_dat": shape_dat,
+            "element_type": "quad",
+            "nx": 4,
+            "ny": 2,
+        },
+        headers=headers,
+    )
+
+    assert resp.status_code == 400
+    assert "no holes" in resp.json()["detail"]
+
+
+def test_multi_component_sketch_meshing_is_preserved_end_to_end(auth_token):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    resp = client.post(
+        "/api/mesh/from-sketch",
+        json={
+            "name": "two_component_mesh",
+            "outer_boundary": [[0, 0], [1, 0], [1, 1], [0, 1]],
+            "holes": [],
+            "components": [
+                {"outer_boundary": [[0, 0], [1, 0], [1, 1], [0, 1]], "holes": []},
+                {"outer_boundary": [[3, 0], [4, 0], [4, 1], [3, 1]], "holes": []},
+            ],
+            "element_type": "delaunay",
+            "max_edge_length": 1.0,
+            "max_refine_iterations": 2,
+        },
+        headers=headers,
+    )
+
+    assert resp.status_code in (200, 201)
+    data = resp.json()
+    assert data["mesh_type"] == "delaunay"
+    assert data["pslg"]["component_count"] == 2
+    assert len(data["pslg"]["components"]) == 2
+    assert data["meshing_params"]["component_count"] == 2
+    assert data["node_count"] > 0
+    assert data["element_count"] > 0

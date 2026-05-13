@@ -14,6 +14,13 @@ This benchmark reproduces the cantilever problem from Section IV of the referenc
 - Poisson ratio: `0.3`
 - Exact neutral-axis deflection: `v(x)=P*x^2*(3L-x)/(6EI)`, `I=t*h^3/12`
 - Exact tip deflection: `-2.000000e-04 m`
+- Coordinate convention: paper load/support orientation is mirrored to clamp at `x=0` and apply the end load at `x=L`; the beam problem and analytical deflection are equivalent.
+
+## Reference Mapping
+
+- Section IV uses LST/T6 triangular elements with 4-element and 10-element meshes.
+- This project requirement supports T3 and Q4 only, so the benchmark keeps the same Section IV geometry, material, load, and analytical curve while validating supported T3/Q4 elements.
+- `Q4-4x2` and `Q4-10x2` mirror the paper's coarse/fine division controls; `Q4-20x4` is the refined accuracy gate; `T3-Delaunay-0.75` verifies the Delaunay/FEA path on the same beam.
 
 CSV point-by-point evidence: `cantilever-benchmark-2026-04-28.csv`
 

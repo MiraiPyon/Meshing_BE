@@ -97,6 +97,47 @@ class DelaunayMeshCreate(BaseModel):
         le=SQRT_TWO,
         description="Ngưỡng r/l tối đa, mặc định sqrt(2)",
     )
+    max_refine_iterations: int = Field(25, ge=0, le=100, description="Số vòng refinement tối đa")
+    smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
+    adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
+    adaptive_min_edge_factor: float = Field(
+        0.45,
+        ge=0.2,
+        le=1.0,
+        description="Tỉ lệ cạnh nhỏ nhất gần biên khi adaptive size field bật",
+    )
+    adaptive_influence_radius_factor: float = Field(
+        0.25,
+        ge=0.01,
+        le=2.0,
+        description="Bán kính ảnh hưởng adaptive theo tỉ lệ bbox diagonal",
+    )
+
+
+class GeometryComponentCreate(BaseModel):
+    """One disconnected polygon component with optional holes."""
+
+    outer_boundary: List[List[float]] = Field(..., min_length=3, description="Outer loop [[x,y],...]")
+    holes: List[List[List[float]]] = Field(default_factory=list, description="Hole loops [[[x,y],...],...]")
+
+    @field_validator("outer_boundary")
+    @classmethod
+    def _validate_component_outer(cls, value: List[List[float]]) -> List[List[float]]:
+        for p in value:
+            if len(p) != 2:
+                raise ValueError("Each component boundary point must contain exactly 2 coordinates")
+        return value
+
+    @field_validator("holes")
+    @classmethod
+    def _validate_component_holes(cls, value: List[List[List[float]]]) -> List[List[List[float]]]:
+        for hole in value:
+            if len(hole) < 3:
+                raise ValueError("Each component hole must contain at least 3 points")
+            for p in hole:
+                if len(p) != 2:
+                    raise ValueError("Each component hole point must contain exactly 2 coordinates")
+        return value
 
 
 class MeshFromSketchCreate(BaseModel):
@@ -104,6 +145,10 @@ class MeshFromSketchCreate(BaseModel):
     name: str = Field(default="sketch", description="Tên lưới")
     outer_boundary: List[List[float]] = Field(..., min_length=3, description="Điểm biên ngoài [[x,y],...] ")
     holes: List[List[List[float]]] = Field(default_factory=list, description="Danh sách holes [[[x,y],...],...]")
+    components: Optional[List[GeometryComponentCreate]] = Field(
+        default=None,
+        description="Optional disconnected components; when present, these drive meshing",
+    )
     element_type: str = Field(default="delaunay", description="delaunay | quad")
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa (Delaunay)")
     min_angle: Optional[float] = Field(20.7, ge=20.7, le=60, description="Góc tối thiểu (Delaunay)")
@@ -118,6 +163,11 @@ class MeshFromSketchCreate(BaseModel):
         le=SQRT_TWO,
         description="Ngưỡng r/l tối đa, mặc định sqrt(2)",
     )
+    max_refine_iterations: int = Field(25, ge=0, le=100, description="Số vòng refinement tối đa")
+    smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
+    adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
+    adaptive_min_edge_factor: float = Field(0.45, ge=0.2, le=1.0, description="Tỉ lệ cạnh nhỏ nhất gần biên")
+    adaptive_influence_radius_factor: float = Field(0.25, ge=0.01, le=2.0, description="Bán kính ảnh hưởng adaptive")
     nx: int = Field(10, ge=1, le=200, description="Số phần tử theo x (Quad)")
     ny: int = Field(10, ge=1, le=200, description="Số phần tử theo y (Quad)")
 
@@ -149,10 +199,26 @@ class ShapeDatMeshCreate(BaseModel):
 
     name: str = Field(default="shape_dat", description="Tên lưới")
     shape_dat: str = Field(..., min_length=3, description="Nội dung file shape.dat")
+    element_type: str = Field(default="delaunay", description="delaunay | quad")
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa mỗi tam giác")
     min_angle: Optional[float] = Field(20.7, ge=20.7, le=60, description="Góc tối thiểu")
     max_edge_length: Optional[float] = Field(None, gt=0, description="Độ dài cạnh tối đa")
     max_circumradius_ratio: Optional[float] = Field(SQRT_TWO, gt=1, le=SQRT_TWO, description="Ngưỡng r/l tối đa")
+    max_refine_iterations: int = Field(25, ge=0, le=100, description="Số vòng refinement tối đa")
+    smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
+    adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
+    adaptive_min_edge_factor: float = Field(0.45, ge=0.2, le=1.0, description="Tỉ lệ cạnh nhỏ nhất gần biên")
+    adaptive_influence_radius_factor: float = Field(0.25, ge=0.01, le=2.0, description="Bán kính ảnh hưởng adaptive")
+    nx: int = Field(10, ge=1, le=200, description="Số phần tử theo x (Quad)")
+    ny: int = Field(10, ge=1, le=200, description="Số phần tử theo y (Quad)")
+
+    @field_validator("element_type")
+    @classmethod
+    def _validate_element_type(cls, value: str) -> str:
+        etype = value.strip().lower()
+        if etype not in {"delaunay", "quad"}:
+            raise ValueError("element_type must be either 'delaunay' or 'quad'")
+        return etype
 
 
 class BooleanOperationRequest(BaseModel):

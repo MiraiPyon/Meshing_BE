@@ -25,7 +25,7 @@ from app.schemas.request import (
 from app.schemas.response import GeometryResponse, MeshResponse, Bounds
 from app.engines.delaunay_engine import DelaunayMeshEngine
 from app.engines.factory import MeshEngineFactory
-from app.engines.pslg import build_pslg, parse_shape_dat, to_shape_dat
+from app.engines.pslg import build_pslg, parse_shape_dat_components, to_shape_dat_components
 from app.database.models import Geometry as GeometryModel
 from app.database.models import Mesh as MeshModel
 from app.database.models import GeometryType as GeometryTypeEnum
@@ -33,6 +33,8 @@ from app.database.models import MeshType as MeshTypeEnum
 from app.engines.geometry_factory import GeometryFactory
 from app.services.events import mesh_events
 
+
+ComponentInput = Tuple[Sequence[Tuple[float, float]], Sequence[Sequence[Tuple[float, float]]]]
 
 
 class MeshService:
@@ -167,22 +169,24 @@ class MeshService:
         if not geometry:
             raise ValueError(f"Geometry {data.geometry_id} not found")
 
-        pslg = self._geometry_to_pslg(geometry)
-        if not pslg:
+        components = self._geometry_to_pslg_components(geometry)
+        if not components:
             raise ValueError("Unable to derive PSLG from geometry")
 
-        outer = [tuple(p) for p in pslg["outer_boundary"]]
-        holes = [[tuple(p) for p in loop] for loop in pslg.get("holes", [])]
-
-        engine = MeshEngineFactory.create("delaunay")
-        nodes, elements = engine.generate(
-            points=outer,
-            holes=holes,
-            resolution=20,
+        nodes, elements = self._generate_mesh_for_components(
+            strategy="delaunay",
+            components=components,
             max_area=data.max_area,
             min_angle=data.min_angle,
             max_edge_length=data.max_edge_length,
             max_circumradius_ratio=data.max_circumradius_ratio,
+            max_refine_iterations=data.max_refine_iterations,
+            smoothing_iterations=data.smoothing_iterations,
+            adaptive_size_field=data.adaptive_size_field,
+            adaptive_min_edge_factor=data.adaptive_min_edge_factor,
+            adaptive_influence_radius_factor=data.adaptive_influence_radius_factor,
+            nx=10,
+            ny=10,
         )
 
         mesh = MeshModel(
@@ -201,6 +205,12 @@ class MeshService:
                     "min_angle": data.min_angle,
                     "max_edge_length": data.max_edge_length,
                     "max_circumradius_ratio": data.max_circumradius_ratio,
+                    "max_refine_iterations": data.max_refine_iterations,
+                    "smoothing_iterations": data.smoothing_iterations,
+                    "adaptive_size_field": data.adaptive_size_field,
+                    "adaptive_min_edge_factor": data.adaptive_min_edge_factor,
+                    "adaptive_influence_radius_factor": data.adaptive_influence_radius_factor,
+                    "component_count": len(components),
                 }
             ),
         )
@@ -244,6 +254,33 @@ class MeshService:
         self, db: Session, data: MeshFromSketchCreate, user_id: UUID,
     ) -> MeshResponse:
         """One-shot: lưu geometry + tạo mesh từ sketch (outer + holes)."""
+        if data.components:
+            components = [
+                (
+                    [tuple(p) for p in component.outer_boundary],
+                    [[tuple(p) for p in loop] for loop in component.holes],
+                )
+                for component in data.components
+            ]
+            return self._create_mesh_from_components(
+                db=db,
+                user_id=user_id,
+                name=data.name,
+                components=components,
+                element_type=data.element_type,
+                max_area=data.max_area,
+                min_angle=data.min_angle,
+                max_edge_length=data.max_edge_length,
+                max_circumradius_ratio=data.max_circumradius_ratio,
+                max_refine_iterations=data.max_refine_iterations,
+                smoothing_iterations=data.smoothing_iterations,
+                adaptive_size_field=data.adaptive_size_field,
+                adaptive_min_edge_factor=data.adaptive_min_edge_factor,
+                adaptive_influence_radius_factor=data.adaptive_influence_radius_factor,
+                nx=data.nx,
+                ny=data.ny,
+            )
+
         return self._create_mesh_from_loops(
             db=db,
             user_id=user_id,
@@ -255,6 +292,11 @@ class MeshService:
             min_angle=data.min_angle,
             max_edge_length=data.max_edge_length,
             max_circumradius_ratio=data.max_circumradius_ratio,
+            max_refine_iterations=data.max_refine_iterations,
+            smoothing_iterations=data.smoothing_iterations,
+            adaptive_size_field=data.adaptive_size_field,
+            adaptive_min_edge_factor=data.adaptive_min_edge_factor,
+            adaptive_influence_radius_factor=data.adaptive_influence_radius_factor,
             nx=data.nx,
             ny=data.ny,
         )
@@ -266,20 +308,24 @@ class MeshService:
         user_id: UUID,
     ) -> MeshResponse:
         """Generate mesh from shape.dat text content."""
-        outer, holes = parse_shape_dat(data.shape_dat)
-        return self._create_mesh_from_loops(
+        components = parse_shape_dat_components(data.shape_dat)
+        return self._create_mesh_from_components(
             db=db,
             user_id=user_id,
             name=data.name,
-            outer=outer,
-            holes=holes,
-            element_type="delaunay",
+            components=components,
+            element_type=data.element_type,
             max_area=data.max_area,
             min_angle=data.min_angle,
             max_edge_length=data.max_edge_length,
             max_circumradius_ratio=data.max_circumradius_ratio,
-            nx=10,
-            ny=10,
+            max_refine_iterations=data.max_refine_iterations,
+            smoothing_iterations=data.smoothing_iterations,
+            adaptive_size_field=data.adaptive_size_field,
+            adaptive_min_edge_factor=data.adaptive_min_edge_factor,
+            adaptive_influence_radius_factor=data.adaptive_influence_radius_factor,
+            nx=data.nx,
+            ny=data.ny,
         )
 
     def export_mesh(self, db: Session, mesh_id: UUID, user_id: UUID, fmt: str) -> dict:
@@ -381,12 +427,17 @@ class MeshService:
             }
 
         if fmt == "shape":
-            pslg = self._geometry_to_pslg(geometry)
-            if not pslg:
+            components = self._geometry_to_pslg_components(geometry)
+            if not components:
                 raise ValueError("shape export is only available for geometry-backed polygonal meshes")
-            shape_txt = to_shape_dat(
-                outer=[tuple(p) for p in pslg["outer_boundary"]],
-                holes=[[tuple(p) for p in h] for h in pslg.get("holes", [])],
+            shape_txt = to_shape_dat_components(
+                [
+                    (
+                        [tuple(p) for p in pslg["outer_boundary"]],
+                        [[tuple(p) for p in h] for h in pslg.get("holes", [])],
+                    )
+                    for pslg in components
+                ]
             )
             return {
                 "format": "shape",
@@ -405,8 +456,10 @@ class MeshService:
             y_min=geometry.bound_y_min, y_max=geometry.bound_y_max,
         )
         points_payload = json.loads(geometry.points) if geometry.points else None
+        components = None
         if isinstance(points_payload, dict):
             points = points_payload.get("outer")
+            components = points_payload.get("components")
         else:
             points = points_payload
         closed = bool(geometry.closed) if geometry.closed is not None else None
@@ -418,7 +471,7 @@ class MeshService:
             width=geometry.width, height=geometry.height,
             center_x=geometry.center_x, center_y=geometry.center_y,
             radius=geometry.radius,
-            points=points, closed=closed,
+            points=points, components=components, closed=closed,
             bounds=bounds, created_at=geometry.created_at,
         )
 
@@ -460,28 +513,81 @@ class MeshService:
         min_angle: Optional[float],
         max_edge_length: Optional[float],
         max_circumradius_ratio: Optional[float],
-        nx: int,
-        ny: int,
+        max_refine_iterations: int = 25,
+        smoothing_iterations: int = 0,
+        adaptive_size_field: bool = False,
+        adaptive_min_edge_factor: float = 0.45,
+        adaptive_influence_radius_factor: float = 0.25,
+        nx: int = 10,
+        ny: int = 10,
     ) -> MeshResponse:
-        pslg = build_pslg(outer_boundary=outer, holes=holes)
-        outer_norm = [tuple(p) for p in pslg["outer_boundary"]]
-        holes_norm = [[tuple(p) for p in loop] for loop in pslg.get("holes", [])]
+        return self._create_mesh_from_components(
+            db=db,
+            user_id=user_id,
+            name=name,
+            components=[(outer, holes)],
+            element_type=element_type,
+            max_area=max_area,
+            min_angle=min_angle,
+            max_edge_length=max_edge_length,
+            max_circumradius_ratio=max_circumradius_ratio,
+            max_refine_iterations=max_refine_iterations,
+            smoothing_iterations=smoothing_iterations,
+            adaptive_size_field=adaptive_size_field,
+            adaptive_min_edge_factor=adaptive_min_edge_factor,
+            adaptive_influence_radius_factor=adaptive_influence_radius_factor,
+            nx=nx,
+            ny=ny,
+        )
+
+    def _create_mesh_from_components(
+        self,
+        db: Session,
+        user_id: UUID,
+        name: str,
+        components: Sequence[ComponentInput],
+        element_type: str,
+        max_area: Optional[float],
+        min_angle: Optional[float],
+        max_edge_length: Optional[float],
+        max_circumradius_ratio: Optional[float],
+        max_refine_iterations: int,
+        smoothing_iterations: int,
+        adaptive_size_field: bool,
+        adaptive_min_edge_factor: float,
+        adaptive_influence_radius_factor: float,
+        nx: int = 10,
+        ny: int = 10,
+    ) -> MeshResponse:
+        pslg_components = [
+            build_pslg(outer_boundary=outer, holes=holes)
+            for outer, holes in components
+        ]
+        if not pslg_components:
+            raise ValueError("At least one geometry component is required")
+
         strategy = element_type.strip().lower()
+        if strategy not in {"delaunay", "quad"}:
+            raise ValueError("element_type must be either 'delaunay' or 'quad'")
 
         if strategy == "quad":
-            if holes_norm:
-                raise ValueError("Quad mesh from sketch only supports a single outer rectangle (no holes)")
-            if not self._is_axis_aligned_rectangle(outer_norm):
-                raise ValueError("Quad mesh from sketch requires an axis-aligned rectangular outer boundary")
+            for pslg in pslg_components:
+                outer_norm = [tuple(p) for p in pslg["outer_boundary"]]
+                holes_norm = [[tuple(p) for p in loop] for loop in pslg.get("holes", [])]
+                if holes_norm:
+                    raise ValueError("Quad mesh from sketch only supports rectangular components (no holes)")
+                if not self._is_axis_aligned_rectangle(outer_norm):
+                    raise ValueError("Quad mesh from sketch requires axis-aligned rectangular component boundaries")
 
-        xs = [p[0] for p in outer_norm]
-        ys = [p[1] for p in outer_norm]
+        xs = [point[0] for pslg in pslg_components for point in pslg["outer_boundary"]]
+        ys = [point[1] for pslg in pslg_components for point in pslg["outer_boundary"]]
+        primary = pslg_components[0]
 
         geometry = GeometryModel(
             user_id=user_id,
             name=name,
             geometry_type=GeometryTypeEnum.POLYGON,
-            points=json.dumps({"outer": pslg["outer_boundary"], "holes": pslg["holes"]}),
+            points=json.dumps(self._components_storage_payload(pslg_components)),
             closed=1,
             bound_x_min=min(xs),
             bound_x_max=max(xs),
@@ -492,16 +598,18 @@ class MeshService:
         db.commit()
         db.refresh(geometry)
 
-        engine = MeshEngineFactory.create(strategy)
-
-        nodes, elements = engine.generate(
-            points=outer_norm,
-            holes=holes_norm,
-            resolution=20,
+        nodes, elements = self._generate_mesh_for_components(
+            strategy=strategy,
+            components=pslg_components,
             max_area=max_area,
             min_angle=min_angle,
             max_edge_length=max_edge_length,
             max_circumradius_ratio=max_circumradius_ratio,
+            max_refine_iterations=max_refine_iterations,
+            smoothing_iterations=smoothing_iterations,
+            adaptive_size_field=adaptive_size_field,
+            adaptive_min_edge_factor=adaptive_min_edge_factor,
+            adaptive_influence_radius_factor=adaptive_influence_radius_factor,
             nx=nx,
             ny=ny,
         )
@@ -531,8 +639,16 @@ class MeshService:
                     "min_angle": min_angle if strategy != "quad" else None,
                     "max_edge_length": max_edge_length if strategy != "quad" else None,
                     "max_circumradius_ratio": max_circumradius_ratio if strategy != "quad" else None,
-                    "outer_vertices": len(outer_norm),
-                    "hole_count": len(holes_norm),
+                    "max_refine_iterations": max_refine_iterations if strategy != "quad" else None,
+                    "smoothing_iterations": smoothing_iterations if strategy != "quad" else 0,
+                    "adaptive_size_field": adaptive_size_field if strategy != "quad" else False,
+                    "adaptive_min_edge_factor": adaptive_min_edge_factor if strategy != "quad" else None,
+                    "adaptive_influence_radius_factor": (
+                        adaptive_influence_radius_factor if strategy != "quad" else None
+                    ),
+                    "outer_vertices": len(primary["outer_boundary"]),
+                    "hole_count": sum(len(pslg.get("holes", [])) for pslg in pslg_components),
+                    "component_count": len(pslg_components),
                 }
             ),
         )
@@ -544,6 +660,80 @@ class MeshService:
         mesh_events.notify_sync("mesh_created", {"mesh_id": str(mesh.id), "name": mesh.name, "type": strategy})
 
         return self._mesh_to_response(db, mesh)
+
+    @staticmethod
+    def _components_storage_payload(pslg_components: Sequence[dict]) -> dict:
+        components = [
+            {
+                "outer": pslg["outer_boundary"],
+                "holes": pslg.get("holes", []),
+            }
+            for pslg in pslg_components
+        ]
+        primary = components[0]
+        return {
+            "outer": primary["outer"],
+            "holes": primary["holes"],
+            "components": components,
+        }
+
+    def _generate_mesh_for_components(
+        self,
+        strategy: str,
+        components: Sequence[dict],
+        max_area: Optional[float],
+        min_angle: Optional[float],
+        max_edge_length: Optional[float],
+        max_circumradius_ratio: Optional[float],
+        max_refine_iterations: int,
+        smoothing_iterations: int,
+        adaptive_size_field: bool,
+        adaptive_min_edge_factor: float,
+        adaptive_influence_radius_factor: float,
+        nx: int,
+        ny: int,
+    ) -> Tuple[List[List[float]], List[List[int]]]:
+        engine = MeshEngineFactory.create(strategy)
+        all_nodes: List[List[float]] = []
+        all_elements: List[List[int]] = []
+
+        for pslg in components:
+            outer_norm = [tuple(p) for p in pslg["outer_boundary"]]
+            holes_norm = [[tuple(p) for p in loop] for loop in pslg.get("holes", [])]
+            nodes, elements = engine.generate(
+                points=outer_norm,
+                holes=holes_norm,
+                resolution=20,
+                max_area=max_area,
+                min_angle=min_angle,
+                max_edge_length=max_edge_length,
+                max_circumradius_ratio=max_circumradius_ratio,
+                max_refine_iterations=max_refine_iterations,
+                smoothing_iterations=smoothing_iterations,
+                adaptive_size_field=adaptive_size_field,
+                adaptive_min_edge_factor=adaptive_min_edge_factor,
+                adaptive_influence_radius_factor=adaptive_influence_radius_factor,
+                nx=nx,
+                ny=ny,
+            )
+            offset = len(all_nodes)
+            all_nodes.extend(nodes)
+            all_elements.extend(self._offset_elements(elements, offset))
+
+        return all_nodes, all_elements
+
+    @staticmethod
+    def _offset_elements(elements: Sequence[Sequence[int]], offset: int) -> List[List[int]]:
+        if not elements:
+            return []
+        flat = [int(idx) for elem in elements for idx in elem]
+        one_based = min(flat) >= 1
+        return [
+            [int(idx) + offset for idx in elem]
+            if one_based
+            else [int(idx) + offset for idx in elem]
+            for elem in elements
+        ]
 
     @staticmethod
     def _is_axis_aligned_rectangle(points: Sequence[Tuple[float, float]], tol: float = 1e-9) -> bool:
@@ -570,8 +760,26 @@ class MeshService:
         return actual == expected
 
     def _geometry_to_pslg(self, geometry: Optional[GeometryModel]) -> Optional[dict]:
-        if geometry is None:
+        components = self._geometry_to_pslg_components(geometry)
+        if not components:
             return None
+        primary = dict(components[0])
+        primary["components"] = [
+            {
+                "outer_boundary": pslg["outer_boundary"],
+                "holes": pslg.get("holes", []),
+                "segments": pslg.get("segments", []),
+                "loops": pslg.get("loops", []),
+                "vertices": pslg.get("vertices", []),
+            }
+            for pslg in components
+        ]
+        primary["component_count"] = len(components)
+        return primary
+
+    def _geometry_to_pslg_components(self, geometry: Optional[GeometryModel]) -> List[dict]:
+        if geometry is None:
+            return []
 
         if geometry.geometry_type == GeometryTypeEnum.RECTANGLE:
             outer = [
@@ -580,7 +788,7 @@ class MeshService:
                 (float(geometry.x_min + geometry.width), float(geometry.y_min + geometry.height)),
                 (float(geometry.x_min), float(geometry.y_min + geometry.height)),
             ]
-            return build_pslg(outer_boundary=outer, holes=[])
+            return [build_pslg(outer_boundary=outer, holes=[])]
 
         if geometry.geometry_type == GeometryTypeEnum.CIRCLE:
             outer = self._generate_circle_boundary(
@@ -589,21 +797,30 @@ class MeshService:
                 float(geometry.radius),
                 resolution=64,
             )
-            return build_pslg(outer_boundary=outer, holes=[])
+            return [build_pslg(outer_boundary=outer, holes=[])]
 
         if geometry.geometry_type in {GeometryTypeEnum.TRIANGLE, GeometryTypeEnum.POLYGON}:
             payload = json.loads(geometry.points) if geometry.points else []
             if isinstance(payload, dict):
+                raw_components = payload.get("components")
+                if isinstance(raw_components, list) and raw_components:
+                    components = []
+                    for component in raw_components:
+                        outer = [tuple(p) for p in component.get("outer", component.get("outer_boundary", []))]
+                        holes = [[tuple(p) for p in loop] for loop in component.get("holes", [])]
+                        if len(outer) >= 3:
+                            components.append(build_pslg(outer_boundary=outer, holes=holes))
+                    return components
                 outer = [tuple(p) for p in payload.get("outer", [])]
                 holes = [[tuple(p) for p in loop] for loop in payload.get("holes", [])]
             else:
                 outer = [tuple(p) for p in payload]
                 holes = []
             if len(outer) < 3:
-                return None
-            return build_pslg(outer_boundary=outer, holes=holes)
+                return []
+            return [build_pslg(outer_boundary=outer, holes=holes)]
 
-        return None
+        return []
 
     def _build_mesh_analysis(
         self,
