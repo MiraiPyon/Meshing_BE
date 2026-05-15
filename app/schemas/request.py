@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from pydantic import field_validator, model_validator
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 from uuid import UUID
 from enum import Enum
 
@@ -194,33 +194,6 @@ class MeshFromSketchCreate(BaseModel):
         return self
 
 
-class ShapeDatMeshCreate(BaseModel):
-    """Request tạo mesh từ nội dung file shape.dat."""
-
-    name: str = Field(default="shape_dat", description="Tên lưới")
-    shape_dat: str = Field(..., min_length=3, description="Nội dung file shape.dat")
-    element_type: str = Field(default="delaunay", description="delaunay | quad")
-    max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa mỗi tam giác")
-    min_angle: Optional[float] = Field(20.0, ge=20.0, le=60, description="Góc tối thiểu")
-    max_edge_length: Optional[float] = Field(None, gt=0, description="Độ dài cạnh tối đa")
-    max_circumradius_ratio: Optional[float] = Field(1.01, gt=1, le=2.0, description="Ngưỡng r/l tối đa")
-    max_refine_iterations: int = Field(0, ge=0, le=100, description="Số vòng refinement tối đa")
-    smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
-    adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
-    adaptive_min_edge_factor: float = Field(0.45, ge=0.2, le=1.0, description="Tỉ lệ cạnh nhỏ nhất gần biên")
-    adaptive_influence_radius_factor: float = Field(0.25, ge=0.01, le=2.0, description="Bán kính ảnh hưởng adaptive")
-    nx: int = Field(10, ge=1, le=200, description="Số phần tử theo x (Quad)")
-    ny: int = Field(10, ge=1, le=200, description="Số phần tử theo y (Quad)")
-
-    @field_validator("element_type")
-    @classmethod
-    def _validate_element_type(cls, value: str) -> str:
-        etype = value.strip().lower()
-        if etype not in {"delaunay", "quad"}:
-            raise ValueError("element_type must be either 'delaunay' or 'quad'")
-        return etype
-
-
 class BooleanOperationRequest(BaseModel):
     """Request thực hiện boolean operation (union / subtract / intersect) trên 2 polygon."""
     polygon_a: List[List[float]] = Field(..., min_length=3, description="Polygon A [[x,y], ...]")
@@ -236,38 +209,3 @@ class BooleanOperationRequest(BaseModel):
             raise ValueError("operation must be one of: union, subtract, intersect")
         return op
 
-
-# ============== Project Snapshot Requests ==============
-
-class ProjectCreate(BaseModel):
-    """Create project snapshot."""
-
-    name: str = Field(..., min_length=1, max_length=255)
-    geometry_id: Optional[UUID] = None
-    mesh_id: Optional[UUID] = None
-    element_type: Optional[str] = Field(
-        default=None,
-        description="Element type tag, e.g. T3 or Q4",
-    )
-    meshing_params: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Persisted meshing params for project restore",
-    )
-    notes: Optional[str] = Field(default=None, max_length=5000)
-
-
-class ProjectUpdate(BaseModel):
-    """Update project snapshot (partial update)."""
-
-    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    geometry_id: Optional[UUID] = None
-    mesh_id: Optional[UUID] = None
-    element_type: Optional[str] = Field(
-        default=None,
-        description="Element type tag, e.g. T3 or Q4",
-    )
-    meshing_params: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Persisted meshing params for project restore",
-    )
-    notes: Optional[str] = Field(default=None, max_length=5000)

@@ -29,7 +29,6 @@ class User(Base):
 
     geometries = relationship("Geometry", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
-    projects = relationship("ProjectSnapshot", back_populates="user", cascade="all, delete-orphan")
 
 
 class RefreshToken(Base):
@@ -114,21 +113,3 @@ class Mesh(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     geometry = relationship("Geometry", back_populates="meshes")
-
-
-class ProjectSnapshot(Base):
-    """Project snapshot model - lưu trạng thái project để tái sử dụng."""
-    __tablename__ = "project_snapshots"
-
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    name = Column(String(255), nullable=False)
-    geometry_id = Column(PGUUID(as_uuid=True), ForeignKey("geometries.id", ondelete="SET NULL"), nullable=True)
-    mesh_id = Column(PGUUID(as_uuid=True), ForeignKey("meshes.id", ondelete="SET NULL"), nullable=True)
-    element_type = Column(String(16), nullable=True)
-    meshing_params = Column(Text, nullable=True)
-    notes = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=utcnow)
-    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
-
-    user = relationship("User", back_populates="projects")

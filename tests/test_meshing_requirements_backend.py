@@ -15,8 +15,8 @@ from app.engines.fea.cantilever_benchmark import (
     run_cantilever_case,
     write_cantilever_benchmark_artifacts,
 )
-from app.engines.pslg import build_pslg, parse_shape_dat, parse_shape_dat_components
-from app.schemas.request import DelaunayMeshCreate, MeshFromSketchCreate, ShapeDatMeshCreate
+from app.engines.pslg import build_pslg
+from app.schemas.request import DelaunayMeshCreate, MeshFromSketchCreate
 from app.services.fea_service import FEAService
 from app.services.mesh_service import mesh_service
 
@@ -44,52 +44,6 @@ def test_pslg_rejects_self_intersection():
         build_pslg(outer_boundary=bowtie, holes=[])
 
 
-def test_shape_dat_parser_outer_and_hole_sections():
-    shape_dat = """
-    # outer boundary
-    OUTER
-    0 0
-    5 0
-    5 3
-    0 3
-    END
-
-    HOLE
-    1 1
-    2 1
-    2 2
-    1 2
-    END
-    """
-
-    outer, holes = parse_shape_dat(shape_dat)
-    assert len(outer) == 4
-    assert len(holes) == 1
-    assert len(holes[0]) == 4
-
-
-def test_shape_dat_parser_supports_multiple_components():
-    shape_dat = """
-    OUTER
-    0 0
-    1 0
-    1 1
-    0 1
-    END
-    OUTER
-    3 0
-    4 0
-    4 1
-    3 1
-    END
-    """
-
-    components = parse_shape_dat_components(shape_dat)
-    assert len(components) == 2
-    assert len(components[0][0]) == 4
-    assert len(components[1][0]) == 4
-
-
 def test_delaunay_request_defaults_are_lowest():
     mesh_req = DelaunayMeshCreate(geometry_id=uuid4())
     assert mesh_req.min_angle == 20.0
@@ -102,13 +56,6 @@ def test_delaunay_request_defaults_are_lowest():
     assert sketch_req.min_angle == 20.0
     assert sketch_req.max_circumradius_ratio == pytest.approx(1.01)
     assert sketch_req.max_refine_iterations == 0
-
-    shape_req = ShapeDatMeshCreate(
-        shape_dat="OUTER\n0 0\n1 0\n1 1\n0 1\nEND",
-    )
-    assert shape_req.min_angle == 20.0
-    assert shape_req.max_circumradius_ratio == pytest.approx(1.01)
-    assert shape_req.max_refine_iterations == 0
 
 
 def test_build_delaunay_native_deterministic_empty_circumcircle():

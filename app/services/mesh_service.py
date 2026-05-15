@@ -20,12 +20,11 @@ from app.schemas.request import (
     QuadMeshCreate,
     DelaunayMeshCreate,
     MeshFromSketchCreate,
-    ShapeDatMeshCreate,
 )
 from app.schemas.response import GeometryResponse, MeshResponse, Bounds
 from app.engines.delaunay_engine import DelaunayMeshEngine
 from app.engines.factory import MeshEngineFactory
-from app.engines.pslg import build_pslg, parse_shape_dat_components, to_shape_dat_components
+from app.engines.pslg import build_pslg
 from app.database.models import Geometry as GeometryModel
 from app.database.models import Mesh as MeshModel
 from app.database.models import GeometryType as GeometryTypeEnum
@@ -301,33 +300,6 @@ class MeshService:
             ny=data.ny,
         )
 
-    def create_mesh_from_shape_dat(
-        self,
-        db: Session,
-        data: ShapeDatMeshCreate,
-        user_id: UUID,
-    ) -> MeshResponse:
-        """Generate mesh from shape.dat text content."""
-        components = parse_shape_dat_components(data.shape_dat)
-        return self._create_mesh_from_components(
-            db=db,
-            user_id=user_id,
-            name=data.name,
-            components=components,
-            element_type=data.element_type,
-            max_area=data.max_area,
-            min_angle=data.min_angle,
-            max_edge_length=data.max_edge_length,
-            max_circumradius_ratio=data.max_circumradius_ratio,
-            max_refine_iterations=data.max_refine_iterations,
-            smoothing_iterations=data.smoothing_iterations,
-            adaptive_size_field=data.adaptive_size_field,
-            adaptive_min_edge_factor=data.adaptive_min_edge_factor,
-            adaptive_influence_radius_factor=data.adaptive_influence_radius_factor,
-            nx=data.nx,
-            ny=data.ny,
-        )
-
     def export_mesh(self, db: Session, mesh_id: UUID, user_id: UUID, fmt: str) -> dict:
         """Export mesh sang json/dat/csv/csv_zip."""
         mesh = db.query(MeshModel).join(GeometryModel).filter(
@@ -336,8 +308,6 @@ class MeshService:
         ).first()
         if not mesh:
             raise ValueError(f"Mesh {mesh_id} not found")
-
-        geometry = db.query(GeometryModel).filter(GeometryModel.id == mesh.geometry_id).first()
 
         nodes = json.loads(mesh.nodes)
         elements = json.loads(mesh.elements)
@@ -426,27 +396,7 @@ class MeshService:
                 "data": buffer.getvalue(),
             }
 
-        if fmt == "shape":
-            components = self._geometry_to_pslg_components(geometry)
-            if not components:
-                raise ValueError("shape export is only available for geometry-backed polygonal meshes")
-            shape_txt = to_shape_dat_components(
-                [
-                    (
-                        [tuple(p) for p in pslg["outer_boundary"]],
-                        [[tuple(p) for p in h] for h in pslg.get("holes", [])],
-                    )
-                    for pslg in components
-                ]
-            )
-            return {
-                "format": "shape",
-                "content_type": "text/plain",
-                "filename": f"{mesh.name}.shape.dat",
-                "data": shape_txt,
-            }
-
-        raise ValueError(f"Unknown format: {fmt}. Supported: json, dat, csv, csv_zip, shape")
+        raise ValueError(f"Unknown format: {fmt}. Supported: json, dat, csv, csv_zip")
 
     # ============== Helper Methods ==============
 

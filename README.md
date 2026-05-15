@@ -1,18 +1,18 @@
 # Meshing_BE
 
-FastAPI backend for the Meshing 2D platform. It owns authentication, geometry CRUD, PSLG normalization, meshing engines, mesh exports, project snapshots, realtime dashboard events, and 2D FEA solving.
+FastAPI backend for the Meshing 2D platform. It owns authentication, geometry CRUD, PSLG normalization, meshing engines, mesh exports, realtime dashboard events, and 2D FEA solving.
 
 ## Capabilities
 
 - Geometry primitives: rectangle, circle, triangle, polygon.
 - Geometry records: create, list, get, delete, plus Boolean CSG (`union`, `subtract`, `intersect`) with disconnected multi-component output preserved end to end.
-- PSLG processing: duplicate point cleanup, outer-loop CCW normalization, hole-loop CW normalization, self-intersection validation, and multi-component `shape.dat` parsing/export.
+- PSLG processing: duplicate point cleanup, outer-loop CCW normalization, hole-loop CW normalization, and self-intersection validation.
 - Meshing:
-  - `Q4`: mapped structured grid for axis-aligned rectangular components, including rectangular `shape.dat` input.
+  - `Q4`: mapped structured grid for axis-aligned rectangular components.
   - `T3`: native `BuildDelaunay` path with quad-edge divide-and-conquer, InCircle checks, PSLG domain filtering, encroached-segment splitting, adaptive size field, Laplacian smoothing, and quality refinement.
 - Dashboard analysis: DOF, mesh quality, element-size distribution, empty-circumcircle check, `nodes_matrix`, `edges_matrix`, `tris_matrix`.
 - FEA: plane stress / plane strain, sparse stiffness assembly, nodal/line loads, Dirichlet BC, reactions, stress/strain/Von Mises recovery.
-- Exports: `json`, `dat`, full `csv`, `csv_zip`, and `shape`.
+- Exports: `json`, `dat`, full `csv`, and `csv_zip`.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ Swagger UI: `http://localhost:8000/docs`
 - Mesh response connectivity (`elements`) is always 0-based for both `Q4` and `T3`.
 - Polygon mesh responses apply viewport-safe bounds padding to avoid extreme auto-zoom on tiny coordinate ranges.
 - Q4 meshing accepts only axis-aligned rectangular components and does not support holes.
-- `shape.dat` supports one or more `OUTER` sections; `HOLE` sections attach to the preceding outer loop.
+
 - Delaunay multi-component meshing keeps disconnected domains in a single mesh response and dashboard payload.
 - Delaunay mesh elements are normalized before FEA so T3 elements are non-degenerate and CCW.
 - `format=csv` returns one full mesh CSV; `format=csv_zip` returns separate `nodes.csv` and `elements.csv`.
@@ -46,8 +46,7 @@ Swagger UI: `http://localhost:8000/docs`
 | Health | `GET /api/health`, `GET /api/health/db` |
 | Auth | `GET /api/auth/google/url`, `POST /api/auth/callback`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me` |
 | Geometry | `POST /api/geometry/rectangle`, `/circle`, `/triangle`, `/polygon`, `/boolean`; `GET /api/geometry`; `GET/DELETE /api/geometry/{id}` |
-| Mesh | `POST /api/mesh/quad`, `/delaunay`, `/from-sketch`, `/from-shape-dat`; `GET/DELETE /api/mesh/{id}`; `GET /api/mesh/{id}/export` |
-| Projects | CRUD under `/api/projects` |
+| Mesh | `POST /api/mesh/quad`, `/delaunay`, `/from-sketch`; `GET/DELETE /api/mesh/{id}`; `GET /api/mesh/{id}/export` |
 | FEA | `POST /api/fea/solve` |
 | Realtime | `WS /api/ws/dashboard` |
 

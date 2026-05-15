@@ -14,18 +14,14 @@ from app.core.deps import get_current_user
 from app.schemas.request import (
     RectangleCreate, CircleCreate, TriangleCreate, PolygonCreate,
     QuadMeshCreate, DelaunayMeshCreate, MeshFromSketchCreate,
-    ShapeDatMeshCreate,
     BooleanOperationRequest,
-    ProjectCreate,
-    ProjectUpdate,
 )
-from app.schemas.response import GeometryResponse, MeshResponse, ProjectSnapshotResponse
+from app.schemas.response import GeometryResponse, MeshResponse
 from app.schemas.fea_request import FEASolveRequest
 from app.schemas.fea_response import FEASolveResponse
 from app.services.mesh_service import mesh_service
 from app.services.fea_service import fea_service
 from app.services.events import mesh_events
-from app.services.project_service import project_service
 from fastapi import WebSocket, WebSocketDisconnect
 import json
 
@@ -194,15 +190,6 @@ def create_mesh_from_sketch(data: MeshFromSketchCreate, db: Session = Depends(ge
         raise
 
 
-@router.post("/mesh/from-shape-dat", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
-def create_mesh_from_shape_dat(data: ShapeDatMeshCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Generate mesh từ nội dung shape.dat (outer loop + optional holes)."""
-    try:
-        return mesh_service.create_mesh_from_shape_dat(db, data, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-
-
 @router.get("/mesh/{mesh_id}/export", tags=["mesh"])
 def export_mesh(
     mesh_id: UUID,
@@ -210,7 +197,7 @@ def export_mesh(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Export mesh sang json/dat/csv/csv_zip/shape."""
+    """Export mesh sang json/dat/csv/csv_zip."""
     from fastapi.responses import PlainTextResponse, JSONResponse, Response
     try:
         result = mesh_service.export_mesh(db, mesh_id, user.id, format)
@@ -232,12 +219,6 @@ def export_mesh(
         return Response(
             content=result["data"],
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
-        )
-    if result["format"] == "shape":
-        return PlainTextResponse(
-            content=result["data"],
-            media_type="text/plain",
             headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
         )
     # dat
@@ -267,49 +248,3 @@ def solve_fea(req: FEASolveRequest, db: Session = Depends(get_db), user=Depends(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
 
-
-# ============== Projects (protected) ==============
-
-@router.post("/projects", response_model=ProjectSnapshotResponse, status_code=status.HTTP_201_CREATED, tags=["projects"])
-def create_project(data: ProjectCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    try:
-        return project_service.create_project(db, data, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-
-
-@router.get("/projects", response_model=List[ProjectSnapshotResponse], tags=["projects"])
-def list_projects(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    return project_service.list_projects(db, user.id)
-
-
-@router.get("/projects/{project_id}", response_model=ProjectSnapshotResponse, tags=["projects"])
-def get_project(project_id: UUID, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    project = project_service.get_project(db, project_id, user.id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Project {project_id} not found")
-    return project
-
-
-@router.put("/projects/{project_id}", response_model=ProjectSnapshotResponse, tags=["projects"])
-def update_project(
-    project_id: UUID,
-    data: ProjectUpdate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    try:
-        project = project_service.update_project(db, project_id, data, user.id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Project {project_id} not found")
-    return project
-
-
-@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["projects"])
-def delete_project(project_id: UUID, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    success = project_service.delete_project(db, project_id, user.id)
-    if not success:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Project {project_id} not found")

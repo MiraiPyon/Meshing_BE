@@ -66,26 +66,3 @@ class MeshResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProjectSnapshotResponse(BaseModel):
-    """Response project snapshot."""
-
-    id: UUID
-    name: str
-    geometry_id: Optional[UUID] = None
-    mesh_id: Optional[UUID] = None
-    element_type: Optional[str] = None
-    meshing_params: Optional[Dict[str, Any]] = None
-    notes: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# ============== Health Check ==============
-
-class HealthResponse(BaseModel):
-    """Health check response"""
-    status: str
-    app_name: str
-    version: str = "1.0.0"
