@@ -197,9 +197,39 @@ class MeshFromSketchCreate(BaseModel):
 class BooleanOperationRequest(BaseModel):
     """Request thực hiện boolean operation (union / subtract / intersect) trên 2 polygon."""
     polygon_a: List[List[float]] = Field(..., min_length=3, description="Polygon A [[x,y], ...]")
+    polygon_a_holes: List[List[List[float]]] = Field(
+        default_factory=list,
+        description="Optional holes for polygon A: [[[x,y],...], ...]",
+    )
     polygon_b: List[List[float]] = Field(..., min_length=3, description="Polygon B [[x,y], ...]")
+    polygon_b_holes: List[List[List[float]]] = Field(
+        default_factory=list,
+        description="Optional holes for polygon B: [[[x,y],...], ...]",
+    )
     operation: str = Field(..., description="union | subtract | intersect")
     name: str = Field(default="boolean_result", description="Tên kết quả")
+
+    @field_validator("polygon_a", "polygon_b")
+    @classmethod
+    def _validate_polygon_points(cls, value: List[List[float]]) -> List[List[float]]:
+        for point in value:
+            if len(point) != 2:
+                raise ValueError("Each polygon point must have exactly 2 coordinates")
+        return value
+
+    @field_validator("polygon_a_holes", "polygon_b_holes")
+    @classmethod
+    def _validate_polygon_holes(
+        cls,
+        value: List[List[List[float]]],
+    ) -> List[List[List[float]]]:
+        for hole in value:
+            if len(hole) < 3:
+                raise ValueError("Each hole must contain at least 3 points")
+            for point in hole:
+                if len(point) != 2:
+                    raise ValueError("Each hole point must have exactly 2 coordinates")
+        return value
 
     @field_validator("operation")
     @classmethod
@@ -208,4 +238,3 @@ class BooleanOperationRequest(BaseModel):
         if op not in {"union", "subtract", "intersect"}:
             raise ValueError("operation must be one of: union, subtract, intersect")
         return op
-

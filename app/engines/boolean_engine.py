@@ -9,18 +9,28 @@ Supports:
 
 from typing import List, Tuple
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
+from shapely.geometry.base import BaseGeometry
 from shapely.validation import make_valid
 
 
 BooleanOp = str  # "union" | "subtract" | "intersect"
 
 
-def _coords_to_polygon(coords: List[List[float]]) -> Polygon:
-    """Convert [[x, y], ...] → Shapely Polygon, ensuring validity."""
-    poly = Polygon([(c[0], c[1]) for c in coords])
-    if not poly.is_valid:
-        poly = make_valid(poly)
-    return poly
+def _coords_to_polygon(
+    coords: List[List[float]],
+    holes: List[List[List[float]]] | None = None,
+) -> BaseGeometry:
+    """Convert shell + holes into a Shapely geometry, ensuring validity."""
+    shell = [(c[0], c[1]) for c in coords]
+    interior_rings = (
+        [[(point[0], point[1]) for point in hole] for hole in holes]
+        if holes
+        else None
+    )
+    geom: BaseGeometry = Polygon(shell=shell, holes=interior_rings)
+    if not geom.is_valid:
+        geom = make_valid(geom)
+    return geom
 
 
 def _polygon_to_coords(poly: Polygon) -> Tuple[
@@ -40,6 +50,8 @@ def boolean_operation(
     polygon_a: List[List[float]],
     polygon_b: List[List[float]],
     operation: BooleanOp,
+    polygon_a_holes: List[List[List[float]]] | None = None,
+    polygon_b_holes: List[List[List[float]]] | None = None,
 ) -> dict:
     """
     Perform a boolean operation on two 2D polygons.
@@ -48,6 +60,8 @@ def boolean_operation(
         polygon_a: Outer boundary of shape A as [[x,y], ...]
         polygon_b: Outer boundary of shape B as [[x,y], ...]
         operation: "union", "subtract", or "intersect"
+        polygon_a_holes: Optional interior rings of shape A.
+        polygon_b_holes: Optional interior rings of shape B.
 
     Returns:
         {
@@ -61,8 +75,8 @@ def boolean_operation(
     Raises:
         ValueError: if operation fails or results in empty geometry
     """
-    a = _coords_to_polygon(polygon_a)
-    b = _coords_to_polygon(polygon_b)
+    a = _coords_to_polygon(polygon_a, polygon_a_holes)
+    b = _coords_to_polygon(polygon_b, polygon_b_holes)
 
     if operation == "union":
         result = a.union(b)

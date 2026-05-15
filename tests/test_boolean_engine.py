@@ -10,6 +10,7 @@ SQUARE_A = [[0, 0], [4, 0], [4, 4], [0, 4]]          # 4×4 square at origin
 SQUARE_B = [[2, 2], [6, 2], [6, 6], [2, 6]]          # 4×4 square offset by (2,2)
 SQUARE_INSIDE = [[1, 1], [3, 1], [3, 3], [1, 3]]     # 2×2 inside A
 SQUARE_OUTSIDE = [[10, 10], [14, 10], [14, 14], [10, 14]]  # non-overlapping
+SQUARE_A_HOLE = [[1, 1], [2, 1], [2, 2], [1, 2]]     # 1×1 hole inside A
 
 
 class TestBooleanUnion:
@@ -96,3 +97,15 @@ class TestBooleanEdgeCases:
         assert "area" in result
         assert "num_vertices" in result
         assert "is_valid" in result
+
+    def test_union_preserves_holes_from_input_polygon(self):
+        result = boolean_operation(
+            SQUARE_A,
+            SQUARE_OUTSIDE,
+            "union",
+            polygon_a_holes=[SQUARE_A_HOLE],
+        )
+        assert result["is_valid"]
+        # one component corresponds to donut A and must preserve one hole
+        hole_counts = sorted(len(component["holes"]) for component in result["components"])
+        assert hole_counts == [0, 1]

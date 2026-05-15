@@ -162,6 +162,26 @@ def test_boolean_endpoint_returns_components_for_multipolygon(auth_token):
     assert "outer_boundary" in data  # backward-compatible field
 
 
+def test_boolean_endpoint_accepts_holes(auth_token):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    resp = client.post(
+        "/api/geometry/boolean",
+        json={
+            "polygon_a": [[0, 0], [4, 0], [4, 4], [0, 4]],
+            "polygon_a_holes": [[[1, 1], [2, 1], [2, 2], [1, 2]]],
+            "polygon_b": [[10, 0], [11, 0], [11, 1], [10, 1]],
+            "operation": "union",
+            "name": "union_with_hole",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["component_count"] == 2
+    hole_counts = sorted(len(component["holes"]) for component in data["components"])
+    assert hole_counts == [0, 1]
+
+
 def test_export_csv_zip_contains_nodes_and_elements(auth_token):
     headers = {"Authorization": f"Bearer {auth_token}"}
 
