@@ -36,8 +36,8 @@ class MaterialModel:
             nu:        Poisson's ratio [0, 0.5)
             thickness: Độ dày cho plane stress (m)
         """
-        if not (0 < nu < 0.5):
-            raise ValueError(f"Poisson's ratio must be in (0, 0.5), got {nu}")
+        if not (0 <= nu < 0.5):
+            raise ValueError(f"Poisson's ratio must be in [0, 0.5), got {nu}")
         if E <= 0:
             raise ValueError(f"Young's modulus must be positive, got {E}")
 

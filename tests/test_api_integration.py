@@ -78,6 +78,7 @@ def test_mesh_creation(auth_token):
     }, headers=headers)
     assert resp.status_code in (200, 201)
     assert resp.json()["mesh_type"] == "quad"
+    assert resp.json()["mesh_id"] == resp.json()["id"]
 
 def test_fea_solve(auth_token):
     headers = {"Authorization": f"Bearer {auth_token}"}
@@ -280,6 +281,11 @@ def test_shape_dat_endpoint_supports_q4(auth_token):
     assert data["node_count"] == 15
     assert data["element_count"] == 8
     assert data["meshing_params"]["strategy"] == "quad"
+    flat_indices = [idx for elem in data["elements"] for idx in elem]
+    assert min(flat_indices) == 0
+    assert max(flat_indices) < data["node_count"]
+    assert (data["bounds"]["x_max"] - data["bounds"]["x_min"]) >= 250.0
+    assert (data["bounds"]["y_max"] - data["bounds"]["y_min"]) >= 250.0
 
 
 def test_shape_dat_endpoint_rejects_q4_holes(auth_token):

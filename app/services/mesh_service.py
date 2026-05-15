@@ -481,14 +481,17 @@ class MeshService:
             x_min=geometry.bound_x_min, x_max=geometry.bound_x_max,
             y_min=geometry.bound_y_min, y_max=geometry.bound_y_max,
         )
+        if geometry.geometry_type == GeometryTypeEnum.POLYGON:
+            bounds = self._normalize_bounds_for_display(bounds)
 
         nodes = json.loads(mesh.nodes)
-        elements = json.loads(mesh.elements)
-        analysis = self._build_mesh_analysis(nodes, elements, mesh.mesh_type)
+        elements_raw = json.loads(mesh.elements)
+        analysis = self._build_mesh_analysis(nodes, elements_raw, mesh.mesh_type)
+        elements = self._normalize_elements_to_zero_based(elements_raw, len(nodes))
         pslg = self._geometry_to_pslg(geometry)
 
         return MeshResponse(
-            id=mesh.id, geometry_id=mesh.geometry_id,
+            id=mesh.id, mesh_id=mesh.id, geometry_id=mesh.geometry_id,
             mesh_type=mesh.mesh_type, name=mesh.name,
             node_count=mesh.node_count, element_count=mesh.element_count,
             nodes=nodes, elements=elements,
@@ -724,16 +727,9 @@ class MeshService:
 
     @staticmethod
     def _offset_elements(elements: Sequence[Sequence[int]], offset: int) -> List[List[int]]:
-        if not elements:
-            return []
-        flat = [int(idx) for elem in elements for idx in elem]
-        one_based = min(flat) >= 1
-        return [
-            [int(idx) + offset for idx in elem]
-            if one_based
-            else [int(idx) + offset for idx in elem]
-            for elem in elements
-        ]
+        if not elements or offset == 0:
+            return [list(elem) for elem in elements]
+        return [[int(idx) + offset for idx in elem] for elem in elements]
 
     @staticmethod
     def _is_axis_aligned_rectangle(points: Sequence[Tuple[float, float]], tol: float = 1e-9) -> bool:
@@ -906,6 +902,47 @@ class MeshService:
         if min_idx >= 1 and max_idx <= node_count:
             return casted
         raise ValueError("Element indexing is invalid for the provided node list")
+
+    @staticmethod
+    def _normalize_elements_to_zero_based(
+        elements: Sequence[Sequence[int]],
+        node_count: int,
+    ) -> List[List[int]]:
+        if not elements:
+            return []
+
+        casted = [[int(v) for v in elem] for elem in elements]
+        flat = [idx for elem in casted for idx in elem]
+        min_idx = min(flat)
+        max_idx = max(flat)
+
+        if min_idx == 0 and max_idx <= node_count - 1:
+            return casted
+        if min_idx >= 1 and max_idx <= node_count:
+            return [[idx - 1 for idx in elem] for elem in casted]
+        raise ValueError("Element indexing is invalid for the provided node list")
+
+    @staticmethod
+    def _normalize_bounds_for_display(bounds: Bounds, min_span: float = 250.0) -> Bounds:
+        x_min = float(bounds.x_min)
+        x_max = float(bounds.x_max)
+        y_min = float(bounds.y_min)
+        y_max = float(bounds.y_max)
+
+        center_x = 0.5 * (x_min + x_max)
+        center_y = 0.5 * (y_min + y_max)
+        span_x = max(x_max - x_min, 0.0)
+        span_y = max(y_max - y_min, 0.0)
+
+        span_x = max(span_x, min_span)
+        span_y = max(span_y, min_span)
+
+        return Bounds(
+            x_min=center_x - 0.5 * span_x,
+            x_max=center_x + 0.5 * span_x,
+            y_min=center_y - 0.5 * span_y,
+            y_max=center_y + 0.5 * span_y,
+        )
 
     @staticmethod
     def _compute_element_areas(

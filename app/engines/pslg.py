@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Iterable, List, Sequence, Tuple
 
+import numpy as np
+
 
 Point = Tuple[float, float]
 ShapeComponent = Tuple[List[Point], List[List[Point]]]
@@ -124,8 +126,11 @@ def point_in_loop(point: Point, loop: Sequence[Point], tol: float = EPSILON) -> 
         if _point_on_segment(point, (x1, y1), (x2, y2), tol):
             return True
 
+        dy = y2 - y1
+        if abs(dy) < 1e-15:
+            continue
         intersects = ((y1 > y) != (y2 > y)) and (
-            x < ((x2 - x1) * (y - y1) / ((y2 - y1) + 1e-20) + x1)
+            x < ((x2 - x1) * (y - y1) / dy + x1)
         )
         if intersects:
             inside = not inside
@@ -145,6 +150,82 @@ def point_in_domain(
         if point_in_loop(point, hole, tol):
             return False
     return True
+
+
+def _batch_point_in_loop(
+    test_points: np.ndarray,
+    loop: np.ndarray,
+    tol: float = 1e-9,
+) -> np.ndarray:
+    """Vectorized ray-cast point-in-polygon for many test points at once.
+
+    Args:
+        test_points: (M, 2) array of query points.
+        loop: (N, 2) array of polygon vertices (CCW or CW).
+
+    Returns:
+        (M,) boolean array — True if inside (boundary counts as inside).
+    """
+    n = len(loop)
+    if n < 3 or len(test_points) == 0:
+        return np.zeros(len(test_points), dtype=bool)
+
+    px = test_points[:, 0]
+    py = test_points[:, 1]
+    inside = np.zeros(len(test_points), dtype=bool)
+    on_boundary = np.zeros(len(test_points), dtype=bool)
+
+    for i in range(n):
+        x1, y1 = float(loop[i][0]), float(loop[i][1])
+        x2, y2 = float(loop[(i + 1) % n][0]), float(loop[(i + 1) % n][1])
+
+        # Vectorized point-on-segment check
+        v_x = px - x1
+        v_y = py - y1
+        seg_x = x2 - x1
+        seg_y = y2 - y1
+        cross = np.abs(v_x * seg_y - v_y * seg_x)
+        seg_len_sq = seg_x**2 + seg_y**2
+        if seg_len_sq > 1e-15:
+            dot = v_x * seg_x + v_y * seg_y
+            on_segment = (cross <= tol * np.sqrt(seg_len_sq)) & (dot >= -tol) & (dot <= seg_len_sq + tol)
+            on_boundary |= on_segment
+
+        dy = y2 - y1
+        if abs(dy) < 1e-15:
+            continue
+
+        # Standard ray-casting: check if horizontal ray from point crosses edge
+        cond1 = (y1 > py) != (y2 > py)
+        x_intersect = (x2 - x1) * (py - y1) / dy + x1
+        cond2 = px < x_intersect
+        crossing = cond1 & cond2
+        inside ^= crossing
+
+    return inside | on_boundary
+
+
+def points_in_domain_batch(
+    test_points: np.ndarray,
+    outer: np.ndarray,
+    holes: Sequence[np.ndarray],
+) -> np.ndarray:
+    """Vectorized batch point-in-domain check.
+
+    Args:
+        test_points: (M, 2) array of query points.
+        outer: (N, 2) outer boundary polygon.
+        holes: list of (K, 2) hole polygons.
+
+    Returns:
+        (M,) boolean array — True if point is inside outer and outside all holes.
+    """
+    mask = _batch_point_in_loop(test_points, outer)
+    for hole in holes:
+        if len(hole) >= 3:
+            in_hole = _batch_point_in_loop(test_points, hole)
+            mask &= ~in_hole
+    return mask
 
 
 def normalize_loop(

@@ -81,10 +81,10 @@ class DelaunayMeshCreate(BaseModel):
     geometry_id: UUID
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa mỗi tam giác")
     min_angle: Optional[float] = Field(
-        20.7,
-        ge=20.7,
+        20.0,
+        ge=20.0,
         le=60,
-        description="Góc tối thiểu (độ), mặc định 20.7",
+        description="Góc tối thiểu (độ), mặc định 20.0",
     )
     max_edge_length: Optional[float] = Field(
         None,
@@ -92,12 +92,12 @@ class DelaunayMeshCreate(BaseModel):
         description="Độ dài cạnh tối đa cho refinement",
     )
     max_circumradius_ratio: Optional[float] = Field(
-        SQRT_TWO,
+        1.01,
         gt=1,
-        le=SQRT_TWO,
-        description="Ngưỡng r/l tối đa, mặc định sqrt(2)",
+        le=2.0,
+        description="Ngưỡng r/l tối đa, mặc định 1.01",
     )
-    max_refine_iterations: int = Field(25, ge=0, le=100, description="Số vòng refinement tối đa")
+    max_refine_iterations: int = Field(0, ge=0, le=100, description="Số vòng refinement tối đa")
     smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
     adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
     adaptive_min_edge_factor: float = Field(
@@ -151,19 +151,19 @@ class MeshFromSketchCreate(BaseModel):
     )
     element_type: str = Field(default="delaunay", description="delaunay | quad")
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa (Delaunay)")
-    min_angle: Optional[float] = Field(20.7, ge=20.7, le=60, description="Góc tối thiểu (Delaunay)")
+    min_angle: Optional[float] = Field(20.0, ge=20.0, le=60, description="Góc tối thiểu (Delaunay)")
     max_edge_length: Optional[float] = Field(
         None,
         gt=0,
         description="Độ dài cạnh tối đa cho refinement (Delaunay)",
     )
     max_circumradius_ratio: Optional[float] = Field(
-        SQRT_TWO,
+        1.01,
         gt=1,
-        le=SQRT_TWO,
-        description="Ngưỡng r/l tối đa, mặc định sqrt(2)",
+        le=2.0,
+        description="Ngưỡng r/l tối đa, mặc định 1.01",
     )
-    max_refine_iterations: int = Field(25, ge=0, le=100, description="Số vòng refinement tối đa")
+    max_refine_iterations: int = Field(0, ge=0, le=100, description="Số vòng refinement tối đa")
     smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
     adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
     adaptive_min_edge_factor: float = Field(0.45, ge=0.2, le=1.0, description="Tỉ lệ cạnh nhỏ nhất gần biên")
@@ -201,10 +201,10 @@ class ShapeDatMeshCreate(BaseModel):
     shape_dat: str = Field(..., min_length=3, description="Nội dung file shape.dat")
     element_type: str = Field(default="delaunay", description="delaunay | quad")
     max_area: Optional[float] = Field(None, gt=0, description="Diện tích tối đa mỗi tam giác")
-    min_angle: Optional[float] = Field(20.7, ge=20.7, le=60, description="Góc tối thiểu")
+    min_angle: Optional[float] = Field(20.0, ge=20.0, le=60, description="Góc tối thiểu")
     max_edge_length: Optional[float] = Field(None, gt=0, description="Độ dài cạnh tối đa")
-    max_circumradius_ratio: Optional[float] = Field(SQRT_TWO, gt=1, le=SQRT_TWO, description="Ngưỡng r/l tối đa")
-    max_refine_iterations: int = Field(25, ge=0, le=100, description="Số vòng refinement tối đa")
+    max_circumradius_ratio: Optional[float] = Field(1.01, gt=1, le=2.0, description="Ngưỡng r/l tối đa")
+    max_refine_iterations: int = Field(0, ge=0, le=100, description="Số vòng refinement tối đa")
     smoothing_iterations: int = Field(0, ge=0, le=20, description="Số vòng Laplacian smoothing")
     adaptive_size_field: bool = Field(False, description="Bật local adaptive mesh size field")
     adaptive_min_edge_factor: float = Field(0.45, ge=0.2, le=1.0, description="Tỉ lệ cạnh nhỏ nhất gần biên")

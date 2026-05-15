@@ -1,5 +1,6 @@
 import math
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -15,6 +16,7 @@ from app.engines.fea.cantilever_benchmark import (
     write_cantilever_benchmark_artifacts,
 )
 from app.engines.pslg import build_pslg, parse_shape_dat, parse_shape_dat_components
+from app.schemas.request import DelaunayMeshCreate, MeshFromSketchCreate, ShapeDatMeshCreate
 from app.services.fea_service import FEAService
 from app.services.mesh_service import mesh_service
 
@@ -86,6 +88,27 @@ def test_shape_dat_parser_supports_multiple_components():
     assert len(components) == 2
     assert len(components[0][0]) == 4
     assert len(components[1][0]) == 4
+
+
+def test_delaunay_request_defaults_are_lowest():
+    mesh_req = DelaunayMeshCreate(geometry_id=uuid4())
+    assert mesh_req.min_angle == 20.0
+    assert mesh_req.max_circumradius_ratio == pytest.approx(1.01)
+    assert mesh_req.max_refine_iterations == 0
+
+    sketch_req = MeshFromSketchCreate(
+        outer_boundary=[[0, 0], [1, 0], [1, 1], [0, 1]],
+    )
+    assert sketch_req.min_angle == 20.0
+    assert sketch_req.max_circumradius_ratio == pytest.approx(1.01)
+    assert sketch_req.max_refine_iterations == 0
+
+    shape_req = ShapeDatMeshCreate(
+        shape_dat="OUTER\n0 0\n1 0\n1 1\n0 1\nEND",
+    )
+    assert shape_req.min_angle == 20.0
+    assert shape_req.max_circumradius_ratio == pytest.approx(1.01)
+    assert shape_req.max_refine_iterations == 0
 
 
 def test_build_delaunay_native_deterministic_empty_circumcircle():

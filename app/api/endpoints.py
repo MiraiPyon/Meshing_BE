@@ -174,10 +174,24 @@ def delete_mesh(mesh_id: UUID, db: Session = Depends(get_db), user=Depends(get_c
 @router.post("/mesh/from-sketch", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
 def create_mesh_from_sketch(data: MeshFromSketchCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     """One-shot: nhận sketch từ FE, tạo geometry + mesh trong một request."""
+    import logging
+    logger = logging.getLogger("mesh.from_sketch")
+    logger.info(
+        "from-sketch request: element_type=%s, outer_pts=%d, holes=%d, max_area=%s, "
+        "min_angle=%s, max_edge_length=%s, max_circumradius_ratio=%s",
+        data.element_type, len(data.outer_boundary), len(data.holes),
+        data.max_area, data.min_angle, data.max_edge_length, data.max_circumradius_ratio,
+    )
     try:
-        return mesh_service.create_mesh_from_sketch(db, data, user.id)
+        result = mesh_service.create_mesh_from_sketch(db, data, user.id)
+        logger.info("from-sketch success: nodes=%s, elements=%s", getattr(result, "node_count", "?"), getattr(result, "element_count", "?"))
+        return result
     except ValueError as e:
+        logger.error("from-sketch ValueError: %s", e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        logger.error("from-sketch Exception: %s", e, exc_info=True)
+        raise
 
 
 @router.post("/mesh/from-shape-dat", response_model=MeshResponse, status_code=status.HTTP_201_CREATED, tags=["mesh"])
@@ -240,11 +254,16 @@ def export_mesh(
 def solve_fea(req: FEASolveRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     try:
         result, success, message = fea_service.solve(db, req, user.id)
-        if not success:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        if not success or result is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message or "FEA solver failed to produce results",
+            )
         return FEASolveResponse(result=result, success=success, message=message)
+    except HTTPException:
+        raise
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
 

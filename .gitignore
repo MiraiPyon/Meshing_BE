@@ -48,7 +48,9 @@ meshing.db
 *.sqlite3
 
 # Local research/reference artifacts
-docs/
+report_assets/
+docs/*.pdf
+docs/*.txt
 
 # OS
 .DS_Store

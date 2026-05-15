@@ -30,6 +30,8 @@ Swagger UI: `http://localhost:8000/docs`
 
 - Protected endpoints require `Authorization: Bearer <access_token>`.
 - FEA request `node_id` values are 0-based.
+- Mesh response connectivity (`elements`) is always 0-based for both `Q4` and `T3`.
+- Polygon mesh responses apply viewport-safe bounds padding to avoid extreme auto-zoom on tiny coordinate ranges.
 - Q4 meshing accepts only axis-aligned rectangular components and does not support holes.
 - `shape.dat` supports one or more `OUTER` sections; `HOLE` sections attach to the preceding outer loop.
 - Delaunay multi-component meshing keeps disconnected domains in a single mesh response and dashboard payload.
@@ -70,8 +72,6 @@ make ci
 .venv/bin/python scripts/run_cantilever_benchmark.py
 git --no-pager status --short --ignored
 ```
-
-Use `RELEASE_CHECKLIST.md` for the manual smoke-test flow before pushing.
 
 ## Cantilever Accuracy Benchmark
 

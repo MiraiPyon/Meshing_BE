@@ -9,9 +9,12 @@ def test_material_parameter_validation():
     with pytest.raises(ValueError):
         MaterialModel(E=0.0, nu=0.3)
     with pytest.raises(ValueError):
-        MaterialModel(E=210e9, nu=0.0)
+        MaterialModel(E=210e9, nu=-0.1)
     with pytest.raises(ValueError):
         MaterialModel(E=210e9, nu=0.5)
+    # nu=0 is now valid (e.g. cork-like materials)
+    m = MaterialModel(E=210e9, nu=0.0)
+    assert m.nu == 0.0
 
 
 def test_material_stress_strain_roundtrip_for_plane_modes():

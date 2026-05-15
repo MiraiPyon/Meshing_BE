@@ -45,6 +45,7 @@ class GeometryResponse(BaseModel):
 class MeshResponse(BaseModel):
     """Response mesh - format cho frontend"""
     id: UUID
+    mesh_id: UUID  # Backward-compatible alias for clients reading mesh_id
     geometry_id: UUID
     mesh_type: MeshType
     name: str
@@ -52,7 +53,7 @@ class MeshResponse(BaseModel):
     element_count: int
     # Raw data cho frontend vẽ
     nodes: List[List[float]]  # n x 2
-    elements: List[List[int]]  # m x 3 (triangle) hoặc m x 4 (quad)
+    elements: List[List[int]]  # m x 3 (triangle) hoặc m x 4 (quad), always 0-based
     element_type: Optional[str] = None  # T3 or Q4
     dof_total: Optional[int] = None
     dashboard: Optional[dict] = None
